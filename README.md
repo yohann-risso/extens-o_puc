@@ -6,6 +6,8 @@ O projeto foi pensado para uso cotidiano, sem login, banco de dados ou coleta de
 
 ## Screenshots
 
+Fluxo completo da simulação: [docs/funcionamento-app.md](docs/funcionamento-app.md)
+
 ![Tela inicial](docs/screenshots/inicio.png)
 
 ![Resultado do mês](docs/screenshots/resultado-mes.png)
