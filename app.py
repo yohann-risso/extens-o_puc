@@ -544,6 +544,95 @@ def normalizar_dividas(df: pd.DataFrame) -> pd.DataFrame:
     return dados.reset_index(drop=True)
 
 
+def valor_para_json(valor: object) -> object:
+    """Converte valores de tabela para um formato seguro no arquivo JSON."""
+    if isinstance(valor, pd.Timestamp):
+        if pd.isna(valor):
+            return None
+        return valor.date().isoformat()
+    if isinstance(valor, datetime):
+        return valor.isoformat(timespec="seconds")
+    if isinstance(valor, date):
+        return valor.isoformat()
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return valor
+
+
+def dataframe_para_registros_json(df: pd.DataFrame) -> list[dict[str, object]]:
+    """Transforma uma tabela em registros simples para backup no dispositivo."""
+    if df is None or df.empty:
+        return []
+    registros = []
+    for linha in df.to_dict("records"):
+        registros.append({coluna: valor_para_json(valor) for coluna, valor in linha.items()})
+    return registros
+
+
+def exportar_json(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> bytes:
+    """Gera um backup JSON para o usuário salvar no próprio dispositivo."""
+    dados = {
+        "app": DISPLAY_NAME,
+        "gerado_em": datetime.now().isoformat(timespec="seconds"),
+        "observacao": "Backup local gerado pelo usuário. O app não mantém armazenamento permanente.",
+        "lancamentos": dataframe_para_registros_json(lancamentos),
+        "dividas": dataframe_para_registros_json(dividas),
+        "configuracoes": {
+            "somar_dividas": bool(st.session_state.get("somar_dividas", True)),
+            "meta_objetivo": st.session_state.get("meta_objetivo", ""),
+            "meta_valor_total": valor_para_json(st.session_state.get("meta_valor_total", 1000.0)),
+            "meta_prazo_meses": valor_para_json(st.session_state.get("meta_prazo_meses", 8)),
+            "sim_valor_inicial": valor_para_json(st.session_state.get("sim_valor_inicial", 300.0)),
+            "sim_valor_mensal": valor_para_json(st.session_state.get("sim_valor_mensal", 100.0)),
+            "sim_meses": valor_para_json(st.session_state.get("sim_meses", 12)),
+        },
+    }
+    return json.dumps(dados, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def importar_json(conteudo: bytes) -> None:
+    """Carrega um backup JSON exportado pelo próprio app."""
+    dados = json.loads(conteudo.decode("utf-8"))
+    if not isinstance(dados, dict) or "lancamentos" not in dados or "dividas" not in dados:
+        raise ValueError("Arquivo JSON incompatível com este app.")
+
+    importacao = {
+        "lancamentos_df": normalizar_lancamentos(pd.DataFrame(dados.get("lancamentos", []))),
+        "dividas_df": normalizar_dividas(pd.DataFrame(dados.get("dividas", []))),
+        "configuracoes": {},
+    }
+    configuracoes = dados.get("configuracoes", {})
+    if isinstance(configuracoes, dict):
+        importacao["configuracoes"] = {
+            "somar_dividas": bool(configuracoes.get("somar_dividas", True)),
+            "meta_objetivo": str(configuracoes.get("meta_objetivo", "")),
+            "meta_valor_total": float(configuracoes.get("meta_valor_total", 1000.0) or 0.0),
+            "meta_prazo_meses": int(configuracoes.get("meta_prazo_meses", 8) or 1),
+            "sim_valor_inicial": float(configuracoes.get("sim_valor_inicial", 300.0) or 0.0),
+            "sim_valor_mensal": float(configuracoes.get("sim_valor_mensal", 100.0) or 0.0),
+            "sim_meses": int(configuracoes.get("sim_meses", 12) or 1),
+        }
+
+    st.session_state["importacao_pendente"] = importacao
+
+
+def aplicar_importacao_pendente() -> None:
+    """Aplica importação antes dos widgets serem criados na execução atual."""
+    importacao = st.session_state.pop("importacao_pendente", None)
+    if not importacao:
+        return
+
+    st.session_state["lancamentos_df"] = importacao["lancamentos_df"]
+    st.session_state["dividas_df"] = importacao["dividas_df"]
+    for chave, valor in importacao.get("configuracoes", {}).items():
+        st.session_state[chave] = valor
+    st.session_state["editor_versao"] = int(st.session_state.get("editor_versao", 0)) + 1
+    st.session_state["mensagem_importacao"] = "Arquivo JSON carregado. Os dados foram restaurados nesta sessão."
+
+
 def calcular_dividas(dividas: pd.DataFrame) -> float:
     """Soma as parcelas que entram no resultado do mês."""
     if dividas.empty:
@@ -1037,6 +1126,7 @@ def aba_lancamentos() -> pd.DataFrame:
     mostrar_detalhes = st.toggle("Mostrar detalhes", value=False)
     colunas_editor = COLUNAS_LANCAMENTOS_BASICAS + (COLUNAS_LANCAMENTOS_DETALHES if mostrar_detalhes else [])
 
+    versao_editor = int(st.session_state.get("editor_versao", 0))
     editado = st.data_editor(
         st.session_state["lancamentos_df"],
         num_rows="dynamic",
@@ -1057,7 +1147,7 @@ def aba_lancamentos() -> pd.DataFrame:
             "Parcelas pagas": st.column_config.NumberColumn("Parcelas pagas", min_value=0, step=1),
             "Observação": st.column_config.TextColumn("Observação"),
         },
-        key="editor_lancamentos",
+        key=f"editor_lancamentos_{versao_editor}",
     )
     st.session_state["lancamentos_df"] = editado
 
@@ -1103,6 +1193,7 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
         key="somar_dividas",
         help="Se a mesma parcela já foi lançada em Registrar, deixe desmarcado para não contar duas vezes.",
     )
+    versao_editor = int(st.session_state.get("editor_versao", 0))
     editado = st.data_editor(
         st.session_state["dividas_df"],
         num_rows="dynamic",
@@ -1115,7 +1206,7 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
             "Parcelas restantes": st.column_config.NumberColumn("Parcelas restantes", min_value=0, step=1),
             "Observação": st.column_config.TextColumn("Observação"),
         },
-        key="editor_dividas",
+        key=f"editor_dividas_{versao_editor}",
     )
     st.session_state["dividas_df"] = editado
     dividas = normalizar_dividas(editado)
@@ -1446,9 +1537,13 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
 def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
     """Mostra histórico, tabelas de apoio e botões de exportação."""
     st.subheader("Histórico")
+    mensagem_importacao = st.session_state.pop("mensagem_importacao", None)
+    if mensagem_importacao:
+        st.success(mensagem_importacao)
+
     linhas_pdf = montar_resumo_exportacao(resumo, resumo_final, meta, simulacao, sugestoes)
     data_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         st.download_button(
             "Baixar Excel",
@@ -1465,6 +1560,27 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
             mime="application/pdf",
             width="stretch",
         )
+    with c3:
+        st.download_button(
+            "Baixar JSON",
+            data=exportar_json(lancamentos, dividas),
+            file_name=f"organizacao_financeira_{data_arquivo}.json",
+            mime="application/json",
+            width="stretch",
+        )
+
+    with st.expander("Carregar JSON salvo no dispositivo"):
+        st.markdown('<p class="note">Use apenas arquivos JSON exportados por este app.</p>', unsafe_allow_html=True)
+        arquivo_json = st.file_uploader("Selecionar arquivo JSON", type=["json"], label_visibility="collapsed")
+        if st.button("Carregar JSON", width="content"):
+            if arquivo_json is None:
+                st.warning("Selecione um arquivo JSON exportado pelo app.")
+            else:
+                try:
+                    importar_json(arquivo_json.getvalue())
+                    st.rerun()
+                except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as erro:
+                    st.error(f"Não foi possível carregar o JSON: {erro}")
 
     st.markdown("#### Resumo mensal")
     c3, c4 = st.columns(2)
@@ -1542,6 +1658,76 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
             st.dataframe(tabela_parceladas, hide_index=True, width="stretch")
 
 
+def tela_privacidade() -> None:
+    """Mostra a política de privacidade e LGPD dentro do app."""
+    st.subheader("Política de Privacidade e LGPD")
+    st.caption("Organização Financeira na Prática - última atualização: Maio de 2026")
+
+    st.markdown(
+        """
+### 1. Sobre o aplicativo
+
+O aplicativo **Organização Financeira na Prática** foi desenvolvido como uma ferramenta simples de organização financeira pessoal, permitindo o registro de receitas, despesas, metas e acompanhamento financeiro básico.
+
+O sistema possui caráter educativo e informativo, com foco em auxiliar usuários na organização do orçamento mensal e no desenvolvimento de hábitos financeiros mais saudáveis.
+
+### 2. Coleta de dados
+
+O aplicativo não solicita CPF, RG, senha, dados bancários, cartão de crédito, informações de conta bancária, localização, biometria ou documentos pessoais.
+
+As informações inseridas pelo usuário são preenchidas voluntariamente apenas para uso pessoal dentro da ferramenta.
+
+### 3. Uso no Streamlit Cloud
+
+Na versão publicada no Streamlit Cloud, os dados digitados são processados temporariamente na sessão do aplicativo para que a interface funcione. O projeto não usa banco de dados, login, armazenamento permanente em servidor, publicidade ou ferramentas próprias de rastreamento.
+
+Ao encerrar ou reiniciar a sessão, as informações preenchidas podem ser perdidas. Para guardar os dados, o usuário deve baixar os arquivos Excel ou JSON e salvá-los no próprio dispositivo.
+
+### 4. Armazenamento das informações
+
+O aplicativo não realiza armazenamento permanente de dados financeiros em servidores externos do projeto.
+
+Os dados preenchidos permanecem apenas durante a sessão de uso, não são vendidos, não são utilizados para fins comerciais e não são compartilhados voluntariamente com terceiros pelo responsável do projeto.
+
+### 5. Controle local dos dados
+
+Os arquivos exportados pelo aplicativo são armazenados exclusivamente no computador, celular ou dispositivo pessoal escolhido pelo usuário.
+
+O aplicativo não possui acesso posterior aos arquivos salvos localmente. O usuário pode baixar um backup em JSON para carregar novamente no próprio app em outro momento.
+
+### 6. Segurança
+
+O aplicativo foi desenvolvido buscando reduzir a coleta de informações pessoais e minimizar riscos relacionados à privacidade dos usuários.
+
+Recomenda-se que o usuário mantenha seus arquivos em local seguro, não compartilhe relatórios financeiros com terceiros e utilize dispositivos pessoais protegidos por senha.
+
+### 7. Base legal (LGPD)
+
+O tratamento das informações inseridas pelo usuário ocorre com base no consentimento do próprio usuário, na utilização voluntária da ferramenta e na finalidade exclusiva de organização financeira pessoal.
+
+O aplicativo busca seguir os princípios da Lei Geral de Proteção de Dados (Lei nº 13.709/2018), especialmente minimização de dados, transparência, finalidade, segurança e necessidade.
+
+### 8. Limitação de responsabilidade
+
+O aplicativo possui finalidade exclusivamente educativa, organizacional e informativa.
+
+O sistema não oferece consultoria financeira, não recomenda investimentos, não realiza aconselhamento financeiro e não substitui orientação profissional especializada.
+
+### 9. Alterações desta política
+
+Esta Política de Privacidade poderá ser atualizada futuramente para melhorias de transparência, segurança e adequação legal.
+
+### 10. Contato
+
+Em caso de dúvidas relacionadas ao funcionamento do aplicativo ou privacidade das informações, o usuário poderá entrar em contato com o responsável pelo projeto.
+
+**Responsável:** Yohann da Rocha Risso<br>
+**Projeto:** Organização Financeira na Prática<br>
+**Instituição:** PUC Minas - Ciências Econômicas EaD
+        """
+    )
+
+
 def barra_lateral() -> None:
     """Monta os botões fixos da barra lateral."""
     st.sidebar.title("Organização")
@@ -1565,15 +1751,17 @@ def barra_lateral() -> None:
         st.cache_data.clear()
         st.rerun()
     st.sidebar.divider()
+    st.sidebar.caption("No Streamlit Cloud, salve seus dados baixando Excel ou JSON no próprio dispositivo.")
     st.sidebar.caption("As comparações possuem caráter informativo.")
 
 
 def main() -> None:
     """Executa o app e organiza as abas principais."""
     configurar_pagina()
+    aplicar_importacao_pendente()
     barra_lateral()
 
-    abas = st.tabs(["Início", "Registrar", "Resultado do mês", "Dívidas", "Metas", "Guardando dinheiro", "Histórico"])
+    abas = st.tabs(["Início", "Registrar", "Resultado do mês", "Dívidas", "Metas", "Guardando dinheiro", "Histórico", "Privacidade e LGPD"])
 
     with abas[0]:
         tela_inicio()
@@ -1606,6 +1794,9 @@ def main() -> None:
 
     with abas[6]:
         aba_historico(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes)
+
+    with abas[7]:
+        tela_privacidade()
 
     st.caption("As comparações possuem caráter informativo.")
 

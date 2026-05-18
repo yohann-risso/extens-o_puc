@@ -26,7 +26,7 @@ Se o celular não abrir, verifique:
 
 ## Opção 2: publicar como página web
 
-Para deixar disponível pela internet, uma opção simples é publicar no Streamlit Community Cloud.
+Para deixar disponível pela internet, uma opção simples é publicar no Streamlit Cloud.
 
 Passos gerais:
 
@@ -35,13 +35,25 @@ Passos gerais:
    - `app.py`
    - `requirements.txt`
    - `README.md`
-3. Acessar `https://streamlit.io/cloud`.
+   - `PRIVACIDADE_LGPD.md`
+3. Acessar `https://share.streamlit.io`.
 4. Conectar a conta do GitHub.
 5. Escolher o repositório do app.
 6. Informar que o arquivo principal é `app.py`.
 7. Publicar.
 
 Depois da publicação, o Streamlit gera um link web que pode ser aberto no computador ou no celular.
+
+### Dados do usuário no Streamlit Cloud
+
+O app não usa banco de dados. Os dados preenchidos ficam na sessão de uso do Streamlit Cloud e podem ser perdidos quando a sessão for encerrada ou reiniciada.
+
+Para guardar as informações, o usuário deve:
+
+1. Abrir a aba **Histórico**.
+2. Baixar o arquivo Excel ou JSON.
+3. Salvar o arquivo no próprio computador, celular ou dispositivo pessoal.
+4. Se quiser continuar depois, carregar novamente o JSON salvo no app.
 
 ## Opção 3: arquivo instalável
 

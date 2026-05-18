@@ -25,6 +25,7 @@ A proposta é educativa. O aplicativo não pede login, não usa dados bancários
 - **Plotly** para os gráficos.
 - **OpenPyXL** para gerar arquivos Excel.
 - API pública do **Banco Central do Brasil** para buscar referências como Selic e TR.
+- **Streamlit Cloud** como opção de publicação web.
 
 ## Abas do app
 
@@ -34,7 +35,8 @@ A proposta é educativa. O aplicativo não pede login, não usa dados bancários
 4. **Dívidas**: acompanha parcelas e compromissos do mês.
 5. **Metas**: calcula quanto guardar por mês.
 6. **Guardando dinheiro**: compara dinheiro parado, poupança e aplicação simples.
-7. **Histórico**: mostra evolução anual e exporta Excel/PDF.
+7. **Histórico**: mostra evolução anual, exporta Excel/PDF/JSON e carrega backup JSON salvo pelo usuário.
+8. **Privacidade e LGPD**: apresenta a política de privacidade do projeto.
 
 ## Como os dados são tratados
 
@@ -60,7 +62,14 @@ O app gera:
 
 - Excel geral com lançamentos, dívidas, resumo, meta, sugestões e simulação.
 - PDF simples com o resumo financeiro.
+- JSON com backup dos lançamentos, dívidas e configurações principais para o usuário salvar no próprio dispositivo.
 - Excel anual com resumo mês a mês, totais por ano, categorias e compras parceladas.
+
+## Privacidade e Streamlit Cloud
+
+O app não usa login nem banco de dados. No Streamlit Cloud, as informações digitadas ficam na sessão de uso e não são armazenadas permanentemente pelo projeto.
+
+Para continuar depois, o usuário deve baixar Excel ou JSON e salvar o arquivo no próprio computador, celular ou dispositivo pessoal. O JSON pode ser carregado novamente no app.
 
 ## Observação
 
