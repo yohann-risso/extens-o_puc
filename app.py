@@ -1,3 +1,11 @@
+"""Aplicativo simples de organização financeira feito com Streamlit.
+
+A ideia do projeto é deixar a pessoa registrar entradas, gastos, dívidas,
+metas e uma simulação básica de dinheiro guardado. O código fica em um único
+arquivo porque o projeto é pequeno, mas as funções foram separadas por assunto
+para facilitar manutenção e apresentação.
+"""
+
 from datetime import date, datetime, timedelta
 from io import BytesIO
 import json
@@ -12,6 +20,8 @@ import streamlit as st
 DISPLAY_NAME = "Organização Financeira na Prática"
 BCB_BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
 CACHE_TAXAS_BCB = "bcb-parser-v3"
+FORMATO_MOEDA_EXCEL = '"R$" #,##0.00'
+FORMATO_DATA_EXCEL = "DD/MM/YYYY"
 
 TIPOS_LANCAMENTO = ["Entrada", "Gasto"]
 CATEGORIAS_ENTRADA = ["Salário", "Horas extras", "Benefícios", "Venda ou bico", "Ajuda recebida", "Outros ganhos"]
@@ -48,6 +58,10 @@ COLUNAS_LANCAMENTOS = [
 ]
 COLUNAS_LANCAMENTOS_BASICAS = ["Data", "Tipo", "Descrição", "Categoria", "Valor"]
 COLUNAS_LANCAMENTOS_DETALHES = ["Fixo", "Início", "Fim", "Parcelado", "Nº de parcelas", "Parcelas pagas", "Observação"]
+COLUNAS_DIVIDAS = ["Dívida", "Falta pagar", "Parcela do mês", "Parcelas restantes", "Observação"]
+COLUNAS_DATA = ["Data", "Início", "Fim"]
+COLUNAS_RESUMO_ANUAL = ["Entradas", "Gastos fixos", "Gastos não fixos", "Total de gastos", "Sobrou/Faltou"]
+COLUNAS_MOEDA_RELATORIO = COLUNAS_RESUMO_ANUAL + ["Valor", "Falta pagar", "Parcela do mês"]
 ICONE_CATEGORIA = {
     "Salário": "💰",
     "Horas extras": "💰",
@@ -68,6 +82,21 @@ ICONE_CATEGORIA = {
     "Dívidas": "⚠️",
     "Imprevistos": "⚠️",
 }
+
+BASE_LANCAMENTO = {
+    "Data": None,
+    "Tipo": "Gasto",
+    "Descrição": "",
+    "Categoria": "Outros gastos",
+    "Valor": 0.0,
+    "Fixo": False,
+    "Início": None,
+    "Fim": None,
+    "Parcelado": False,
+    "Nº de parcelas": 1,
+    "Parcelas pagas": 0,
+    "Observação": "",
+}
 MESES_PT = {
     1: "Janeiro",
     2: "Fevereiro",
@@ -85,82 +114,82 @@ MESES_PT = {
 
 
 def formatar_moeda(valor: float) -> str:
+    """Mostra número no formato usado no Brasil."""
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def formatar_decimal(valor: float) -> str:
+    """Mostra percentual com vírgula em vez de ponto."""
     return f"{valor:.2f}".replace(".", ",")
 
 
 def formatar_data(valor: object) -> str:
+    """Converte datas para dia/mês/ano quando o valor é válido."""
     data = pd.to_datetime(valor, errors="coerce")
     if pd.isna(data):
         return ""
     return data.strftime("%d/%m/%Y")
 
 
-def formatar_tabela_lancamentos(lancamentos: pd.DataFrame, colunas: list[str] | None = None) -> pd.DataFrame:
-    tabela = lancamentos.copy()
+def formatar_tabela(
+    tabela_original: pd.DataFrame,
+    colunas: list[str] | None = None,
+    colunas_moeda: list[str] | None = None,
+    colunas_data: list[str] | None = None,
+) -> pd.DataFrame:
+    """Prepara tabelas para aparecer na tela, sem mexer nos dados originais."""
+    tabela = tabela_original.copy()
     if tabela.empty:
         return tabela
     if colunas is not None:
         tabela = tabela[[coluna for coluna in colunas if coluna in tabela.columns]].copy()
-    for coluna_data in ["Data", "Início", "Fim"]:
+    for coluna_data in colunas_data or []:
         if coluna_data in tabela.columns:
             tabela[coluna_data] = tabela[coluna_data].map(formatar_data)
-    if "Valor" in tabela.columns:
-        tabela["Valor"] = tabela["Valor"].map(formatar_moeda)
+    for coluna_moeda in colunas_moeda or []:
+        if coluna_moeda in tabela.columns:
+            tabela[coluna_moeda] = tabela[coluna_moeda].map(formatar_moeda)
     return tabela
+
+
+def formatar_tabela_lancamentos(lancamentos: pd.DataFrame, colunas: list[str] | None = None) -> pd.DataFrame:
+    """Formata lançamentos para consulta visual."""
+    return formatar_tabela(lancamentos, colunas=colunas, colunas_moeda=["Valor"], colunas_data=COLUNAS_DATA)
 
 
 def formatar_tabela_dividas(dividas: pd.DataFrame) -> pd.DataFrame:
-    tabela = dividas.copy()
-    if tabela.empty:
-        return tabela
-    for coluna in ["Falta pagar", "Parcela do mês"]:
-        if coluna in tabela.columns:
-            tabela[coluna] = tabela[coluna].map(formatar_moeda)
-    return tabela
+    """Formata a tabela de dívidas para leitura."""
+    return formatar_tabela(dividas, colunas_moeda=["Falta pagar", "Parcela do mês"])
 
 
 def formatar_tabela_simulacao(tabela: pd.DataFrame) -> pd.DataFrame:
-    tabela_formatada = tabela.copy()
-    if tabela_formatada.empty:
-        return tabela_formatada
-    for coluna in tabela_formatada.columns:
-        if coluna != "Mês":
-            tabela_formatada[coluna] = tabela_formatada[coluna].map(formatar_moeda)
-    return tabela_formatada
+    """Formata a evolução mensal da simulação."""
+    colunas_moeda = [coluna for coluna in tabela.columns if coluna != "Mês"]
+    return formatar_tabela(tabela, colunas_moeda=colunas_moeda)
 
 
 def formatar_tabela_resumo_anual(tabela: pd.DataFrame) -> pd.DataFrame:
-    tabela_formatada = tabela.copy()
-    if tabela_formatada.empty:
-        return tabela_formatada
-    for coluna in ["Entradas", "Gastos fixos", "Gastos não fixos", "Total de gastos", "Sobrou/Faltou"]:
-        if coluna in tabela_formatada.columns:
-            tabela_formatada[coluna] = tabela_formatada[coluna].map(formatar_moeda)
-    return tabela_formatada
+    """Formata o resumo anual mês a mês."""
+    return formatar_tabela(tabela, colunas_moeda=COLUNAS_RESUMO_ANUAL)
 
 
 def formatar_tabela_categoria_anual(tabela: pd.DataFrame) -> pd.DataFrame:
-    tabela_formatada = tabela.copy()
-    if tabela_formatada.empty:
-        return tabela_formatada
-    if "Valor" in tabela_formatada.columns:
-        tabela_formatada["Valor"] = tabela_formatada["Valor"].map(formatar_moeda)
-    return tabela_formatada
+    """Formata o resumo anual por categoria."""
+    return formatar_tabela(tabela, colunas_moeda=["Valor"])
 
 
 def aplicar_eixo_moeda(fig) -> None:
+    """Coloca prefixo de real nos eixos dos gráficos."""
     fig.update_yaxes(tickprefix="R$ ", separatethousands=True)
 
 
 def dinheiro_input(rotulo: str, chave: str, valor: float = 0.0, ajuda: str | None = None) -> float:
+    """Evita repetir a mesma configuração nos campos de dinheiro."""
     return st.number_input(rotulo, min_value=0.0, value=float(valor), step=50.0, format="%.2f", key=chave, help=ajuda)
 
 
 def numero_bcb(valor: object) -> float:
+    """Converte número vindo do Banco Central, que chega como texto."""
     if pd.isna(valor):
         return 0.0
     return float(str(valor).strip().replace(",", "."))
@@ -172,10 +201,12 @@ def normalizar_percentual_atual(valor: float) -> float:
 
 
 def icone_categoria(categoria: str) -> str:
+    """Escolhe um ícone simples para a categoria."""
     return ICONE_CATEGORIA.get(categoria, "•")
 
 
 def configurar_pagina() -> None:
+    """Configura a página e o CSS básico do app."""
     st.set_page_config(page_title=DISPLAY_NAME, layout="wide", initial_sidebar_state="expanded")
     st.markdown(
         """
@@ -272,6 +303,7 @@ def configurar_pagina() -> None:
 
 
 def card(rotulo: str, valor: str, ajuda: str = "", cor: str = "green") -> None:
+    """Mostra um card simples de indicador financeiro."""
     st.markdown(
         f"""
         <div class="metric-card {cor}">
@@ -285,14 +317,53 @@ def card(rotulo: str, valor: str, ajuda: str = "", cor: str = "green") -> None:
 
 
 def total_line(texto: str) -> None:
+    """Mostra uma linha de total com destaque."""
     st.markdown(f'<div class="total-line">{texto}</div>', unsafe_allow_html=True)
 
 
 def panel_html(titulo: str, texto: str) -> None:
+    """Mostra um bloco curto de texto dentro do layout."""
     st.markdown(f'<div class="panel"><strong>{titulo}</strong><br>{texto}</div>', unsafe_allow_html=True)
 
 
+def limpar_grafico(fig, margem: dict[str, int] | None = None):
+    """Deixa o gráfico com aparência mais limpa para caber no Streamlit."""
+    fig.update_layout(
+        showlegend=False,
+        xaxis_title="",
+        yaxis_title="",
+        margin=margem or dict(l=10, r=10, t=15, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
+def grafico_barras_horizontais(
+    dados: pd.DataFrame,
+    eixo_y: str,
+    cores: list[str] | None = None,
+):
+    """Cria gráfico horizontal para comparações de valores."""
+    sequencia_cores = cores if cores is not None else px.colors.qualitative.Set2
+    fig = px.bar(
+        dados,
+        x="Valor",
+        y=eixo_y,
+        text="Texto",
+        orientation="h",
+        color=eixo_y,
+        color_discrete_sequence=sequencia_cores,
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    limpar_grafico(fig)
+    fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
+    fig.update_yaxes(showgrid=False)
+    return fig
+
+
 def buscar_serie_bcb(codigo: int, ultimos: int = 1) -> list[dict[str, object]]:
+    """Busca uma série histórica simples na API do Banco Central."""
     data_final = date.today()
     data_inicial = data_final - timedelta(days=900)
     url = (
@@ -310,6 +381,7 @@ def buscar_serie_bcb(codigo: int, ultimos: int = 1) -> list[dict[str, object]]:
 
 @st.cache_data(ttl=60 * 60)
 def obter_taxas_bcb(_cache_version: str = CACHE_TAXAS_BCB) -> dict[str, object]:
+    """Obtém Selic e TR para a simulação de dinheiro guardado."""
     try:
         selic = buscar_serie_bcb(432)[-1]
         tr = buscar_serie_bcb(226)[-1]
@@ -333,74 +405,48 @@ def obter_taxas_bcb(_cache_version: str = CACHE_TAXAS_BCB) -> dict[str, object]:
         }
 
 
+def montar_lancamento(**campos: object) -> dict[str, object]:
+    """Monta um lançamento usando valores padrão e sobrescrevendo o necessário."""
+    lancamento = BASE_LANCAMENTO.copy()
+    lancamento["Data"] = date.today()
+    lancamento.update(campos)
+    return lancamento
+
+
 def criar_lancamentos_padrao() -> pd.DataFrame:
+    """Cria algumas linhas iniciais para a pessoa entender o preenchimento."""
     return pd.DataFrame(
         [
-            {
-                "Data": date.today(),
-                "Tipo": "Entrada",
-                "Descrição": "Salário",
-                "Categoria": "Salário",
-                "Valor": 0.0,
-                "Fixo": True,
-                "Início": date(date.today().year, 1, 1),
-                "Fim": None,
-                "Parcelado": False,
-                "Nº de parcelas": 1,
-                "Parcelas pagas": 0,
-                "Observação": "",
-            },
-            {
-                "Data": date.today(),
-                "Tipo": "Gasto",
-                "Descrição": "Mercado",
-                "Categoria": "Mercado e alimentação",
-                "Valor": 0.0,
-                "Fixo": False,
-                "Início": None,
-                "Fim": None,
-                "Parcelado": False,
-                "Nº de parcelas": 1,
-                "Parcelas pagas": 0,
-                "Observação": "",
-            },
-            {
-                "Data": date.today(),
-                "Tipo": "Gasto",
-                "Descrição": "Conta de luz",
-                "Categoria": "Água, luz e internet",
-                "Valor": 0.0,
-                "Fixo": True,
-                "Início": date(date.today().year, 1, 1),
-                "Fim": None,
-                "Parcelado": False,
-                "Nº de parcelas": 1,
-                "Parcelas pagas": 0,
-                "Observação": "",
-            },
+            montar_lancamento(
+                **{
+                    "Tipo": "Entrada",
+                    "Descrição": "Salário",
+                    "Categoria": "Salário",
+                    "Fixo": True,
+                    "Início": date(date.today().year, 1, 1),
+                }
+            ),
+            montar_lancamento(**{"Descrição": "Mercado", "Categoria": "Mercado e alimentação"}),
+            montar_lancamento(
+                **{
+                    "Descrição": "Conta de luz",
+                    "Categoria": "Água, luz e internet",
+                    "Fixo": True,
+                    "Início": date(date.today().year, 1, 1),
+                }
+            ),
         ]
     )
 
 
 def criar_lancamento_vazio(tipo: str = "Gasto") -> dict[str, object]:
+    """Cria uma linha vazia para o editor do Streamlit."""
     categoria = "Outros ganhos" if tipo == "Entrada" else "Outros gastos"
-    return {
-        "Data": date.today(),
-        "Tipo": tipo,
-        "Descrição": "",
-        "Categoria": categoria,
-        "Valor": 0.0,
-        "Fixo": False,
-        "Início": None,
-        "Fim": None,
-        "Parcelado": False,
-        "Nº de parcelas": 1,
-        "Parcelas pagas": 0,
-        "Observação": "",
-    }
+    return montar_lancamento(**{"Tipo": tipo, "Categoria": categoria})
 
 
 def normalizar_lancamentos(df: pd.DataFrame) -> pd.DataFrame:
+    """Limpa os lançamentos antes de calcular ou exportar."""
     colunas = COLUNAS_LANCAMENTOS
     if df is None or df.empty:
         return pd.DataFrame(columns=colunas)
@@ -427,6 +473,8 @@ def normalizar_lancamentos(df: pd.DataFrame) -> pd.DataFrame:
     dados["Observação"] = dados["Observação"].fillna("").astype(str)
     dados["Valor"] = pd.to_numeric(dados["Valor"], errors="coerce").fillna(0.0)
     dados["Fixo"] = dados["Fixo"].fillna(False).astype(bool)
+
+    # Para gastos fixos, a data de início controla a repetição no histórico anual.
     data_dt = pd.to_datetime(dados["Data"], errors="coerce")
     inicio_dt = pd.to_datetime(dados["Início"], errors="coerce").fillna(data_dt)
     fim_dt = pd.to_datetime(dados["Fim"], errors="coerce")
@@ -435,6 +483,8 @@ def normalizar_lancamentos(df: pd.DataFrame) -> pd.DataFrame:
     dados.loc[fim_dt.isna(), "Fim"] = None
     dados.loc[~dados["Fixo"], "Início"] = None
     dados.loc[~dados["Fixo"], "Fim"] = None
+
+    # Parcelas são guardadas separadas porque ajudam no relatório, mesmo sem mudar o cálculo do mês.
     dados["Parcelado"] = dados["Parcelado"].fillna(False).astype(bool)
     dados["Nº de parcelas"] = pd.to_numeric(dados["Nº de parcelas"], errors="coerce").fillna(1).astype(int)
     dados["Parcelas pagas"] = pd.to_numeric(dados["Parcelas pagas"], errors="coerce").fillna(0).astype(int)
@@ -448,12 +498,14 @@ def normalizar_lancamentos(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def calcular_receitas(lancamentos: pd.DataFrame) -> float:
+    """Soma tudo que entrou no mês."""
     if lancamentos.empty:
         return 0.0
     return float(lancamentos.loc[lancamentos["Tipo"] == "Entrada", "Valor"].sum())
 
 
 def calcular_gastos(lancamentos: pd.DataFrame) -> dict[str, float]:
+    """Separa gastos fixos e variáveis."""
     if lancamentos.empty:
         return {"total_fixos": 0.0, "total_variaveis": 0.0, "total_gastos_sem_dividas": 0.0}
     gastos = lancamentos[lancamentos["Tipo"] == "Gasto"]
@@ -467,13 +519,15 @@ def calcular_gastos(lancamentos: pd.DataFrame) -> dict[str, float]:
 
 
 def criar_dividas_padrao() -> pd.DataFrame:
+    """Cria uma linha inicial para cadastro de dívidas."""
     return pd.DataFrame(
         [{"Dívida": "", "Falta pagar": 0.0, "Parcela do mês": 0.0, "Parcelas restantes": 0, "Observação": ""}]
     )
 
 
 def normalizar_dividas(df: pd.DataFrame) -> pd.DataFrame:
-    colunas = ["Dívida", "Falta pagar", "Parcela do mês", "Parcelas restantes", "Observação"]
+    """Limpa a tabela de dívidas antes de somar."""
+    colunas = COLUNAS_DIVIDAS
     if df is None or df.empty:
         return pd.DataFrame(columns=colunas)
     dados = df.copy()
@@ -491,12 +545,14 @@ def normalizar_dividas(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def calcular_dividas(dividas: pd.DataFrame) -> float:
+    """Soma as parcelas que entram no resultado do mês."""
     if dividas.empty:
         return 0.0
     return float(dividas["Parcela do mês"].sum())
 
 
 def gerar_resumo(total_receitas: float, total_fixos: float, total_variaveis: float, total_dividas: float) -> dict[str, float]:
+    """Junta os totais principais em um resumo do mês."""
     total_gastos = total_fixos + total_variaveis + total_dividas
     saldo = total_receitas - total_gastos
     usado = total_gastos / total_receitas * 100 if total_receitas > 0 else 0.0
@@ -514,6 +570,7 @@ def gerar_resumo(total_receitas: float, total_fixos: float, total_variaveis: flo
 
 
 def gerar_diagnostico(resumo: dict[str, float]) -> list[dict[str, str]]:
+    """Gera alertas curtos a partir do resultado do mês."""
     total_receitas = resumo["total_receitas"]
     total_gastos = resumo["total_geral_gastos"]
     total_dividas = resumo["total_dividas"]
@@ -542,6 +599,7 @@ def gerar_diagnostico(resumo: dict[str, float]) -> list[dict[str, str]]:
 
 
 def gerar_sugestoes_rapidas(resumo: dict[str, float], lancamentos: pd.DataFrame) -> list[str]:
+    """Cria sugestões simples de ação para a pessoa testar."""
     if resumo["total_receitas"] == 0:
         return ["Registre o dinheiro que entra no mês.", "Adicione os principais gastos.", "Volte ao resultado depois dos primeiros lançamentos."]
 
@@ -562,6 +620,7 @@ def gerar_sugestoes_rapidas(resumo: dict[str, float], lancamentos: pd.DataFrame)
 
 
 def principal_categoria_gasto(lancamentos: pd.DataFrame) -> tuple[str, float]:
+    """Encontra a categoria de gasto com maior valor."""
     gastos = lancamentos[lancamentos["Tipo"] == "Gasto"] if not lancamentos.empty else pd.DataFrame()
     if gastos.empty:
         return "Ainda não registrada", 0.0
@@ -572,6 +631,7 @@ def principal_categoria_gasto(lancamentos: pd.DataFrame) -> tuple[str, float]:
 
 
 def gerar_resumo_financeiro_mes(resumo: dict[str, float], lancamentos: pd.DataFrame) -> dict[str, object]:
+    """Monta o texto final do mês usando os principais indicadores."""
     categoria, valor_categoria = principal_categoria_gasto(lancamentos)
     saldo = resumo["saldo_final"]
     total_receitas = resumo["total_receitas"]
@@ -601,6 +661,7 @@ def gerar_resumo_financeiro_mes(resumo: dict[str, float], lancamentos: pd.DataFr
 
 
 def preparar_lancamentos_ano(lancamentos: pd.DataFrame) -> pd.DataFrame:
+    """Adiciona ano e mês para relatórios anuais."""
     dados = lancamentos.copy()
     if dados.empty:
         return dados
@@ -613,6 +674,7 @@ def preparar_lancamentos_ano(lancamentos: pd.DataFrame) -> pd.DataFrame:
 
 
 def inicio_do_mes(valor: object) -> pd.Timestamp | None:
+    """Transforma uma data no primeiro dia do mês."""
     data = pd.to_datetime(valor, errors="coerce")
     if pd.isna(data):
         return None
@@ -620,6 +682,7 @@ def inicio_do_mes(valor: object) -> pd.Timestamp | None:
 
 
 def data_repetida_no_mes(mes: pd.Timestamp, dia_preferido: int) -> date:
+    """Repete uma data no mês respeitando meses com menos dias."""
     ultimo_dia = int((mes + pd.offsets.MonthEnd(0)).day)
     return date(int(mes.year), int(mes.month), min(max(dia_preferido, 1), ultimo_dia))
 
@@ -652,6 +715,7 @@ def expandir_fixos_para_relatorio(lancamentos: pd.DataFrame, anos: list[int]) ->
             mes_limite = min(fim, periodo_fim)
             dia_preferido = int(data_lancamento.day)
 
+            # Aqui cada lançamento fixo vira uma linha por mês dentro do período selecionado.
             while mes_atual <= mes_limite:
                 repetido = linha_dict.copy()
                 repetido["Data"] = data_repetida_no_mes(mes_atual, dia_preferido)
@@ -672,6 +736,7 @@ def expandir_fixos_para_relatorio(lancamentos: pd.DataFrame, anos: list[int]) ->
 
 
 def anos_disponiveis(lancamentos: pd.DataFrame) -> list[int]:
+    """Lista anos possíveis para montar o histórico."""
     dados = preparar_lancamentos_ano(lancamentos)
     anos = set([2026, 2027])
     if not dados.empty:
@@ -684,6 +749,7 @@ def anos_disponiveis(lancamentos: pd.DataFrame) -> list[int]:
 
 
 def gerar_relatorio_anual(lancamentos: pd.DataFrame, anos: list[int]) -> dict[str, pd.DataFrame]:
+    """Gera tabelas usadas no histórico anual."""
     considerados = expandir_fixos_para_relatorio(lancamentos, anos)
     dados = preparar_lancamentos_ano(considerados)
     linhas = []
@@ -753,7 +819,31 @@ def gerar_relatorio_anual(lancamentos: pd.DataFrame, anos: list[int]) -> dict[st
     }
 
 
+def ajustar_largura_colunas_excel(writer) -> None:
+    """Ajusta a largura das colunas das planilhas exportadas."""
+    for planilha in writer.sheets.values():
+        for coluna in planilha.columns:
+            maior = max(len(str(celula.value)) if celula.value is not None else 0 for celula in coluna)
+            planilha.column_dimensions[coluna[0].column_letter].width = min(maior + 3, 52)
+
+
+def cabecalhos_excel(planilha) -> dict[str, str]:
+    """Mapeia nome da coluna para letra da coluna no Excel."""
+    return {celula.value: celula.column_letter for celula in planilha[1] if celula.value is not None}
+
+
+def aplicar_formato_excel(writer, nome_planilha: str, nomes_colunas: list[str], formato: str) -> None:
+    """Aplica formato numérico em colunas específicas, se elas existirem."""
+    planilha = writer.sheets[nome_planilha]
+    cabecalhos = cabecalhos_excel(planilha)
+    for nome_coluna in nomes_colunas:
+        if nome_coluna in cabecalhos:
+            for celula in planilha[cabecalhos[nome_coluna]][1:]:
+                celula.number_format = formato
+
+
 def exportar_relatorio_anual_excel(relatorio: dict[str, pd.DataFrame]) -> bytes:
+    """Exporta as tabelas anuais para Excel."""
     arquivo = BytesIO()
     with pd.ExcelWriter(arquivo, engine="openpyxl") as writer:
         relatorio["mensal"].to_excel(writer, index=False, sheet_name="Mes a mes")
@@ -761,30 +851,20 @@ def exportar_relatorio_anual_excel(relatorio: dict[str, pd.DataFrame]) -> bytes:
         relatorio["categorias"].to_excel(writer, index=False, sheet_name="Categorias")
         relatorio["parceladas"].to_excel(writer, index=False, sheet_name="Parceladas")
 
-        for planilha in writer.sheets.values():
-            for coluna in planilha.columns:
-                maior = max(len(str(celula.value)) if celula.value is not None else 0 for celula in coluna)
-                planilha.column_dimensions[coluna[0].column_letter].width = min(maior + 3, 52)
-
+        ajustar_largura_colunas_excel(writer)
         for nome_planilha in ["Mes a mes", "Totais por ano", "Categorias", "Parceladas"]:
-            planilha = writer.sheets[nome_planilha]
-            cabecalhos = {celula.value: celula.column_letter for celula in planilha[1]}
-            for nome_coluna in ["Entradas", "Gastos fixos", "Gastos não fixos", "Total de gastos", "Sobrou/Faltou", "Valor"]:
-                if nome_coluna in cabecalhos:
-                    for celula in planilha[cabecalhos[nome_coluna]][1:]:
-                        celula.number_format = '"R$" #,##0.00'
-            for nome_coluna in ["Data", "Início", "Fim"]:
-                if nome_coluna in cabecalhos:
-                    for celula in planilha[cabecalhos[nome_coluna]][1:]:
-                        celula.number_format = "DD/MM/YYYY"
+            aplicar_formato_excel(writer, nome_planilha, COLUNAS_MOEDA_RELATORIO, FORMATO_MOEDA_EXCEL)
+            aplicar_formato_excel(writer, nome_planilha, COLUNAS_DATA, FORMATO_DATA_EXCEL)
     return arquivo.getvalue()
 
 
 def taxa_mensal_anual(taxa_aa: float) -> float:
+    """Converte taxa anual em taxa mensal composta."""
     return (1 + taxa_aa / 100) ** (1 / 12) - 1
 
 
 def taxa_poupanca_mensal(selic_aa: float, tr_mensal: float) -> tuple[float, str]:
+    """Calcula uma referência simplificada para poupança."""
     if selic_aa <= 8.5:
         base = taxa_mensal_anual(selic_aa * 0.70)
         regra = "referência simples da poupança"
@@ -801,6 +881,7 @@ def simular_cenarios(
     selic_aa: float,
     tr_mensal: float,
 ) -> dict[str, object]:
+    """Simula dinheiro parado, poupança e uma aplicação simples."""
     taxa_poupanca, regra_poupanca = taxa_poupanca_mensal(selic_aa, tr_mensal)
     taxa_aplicacao_simples = taxa_mensal_anual(max(selic_aa, 0))
 
@@ -841,21 +922,28 @@ def simular_cenarios(
 
 
 def carregar_exemplo() -> None:
+    """Preenche o app com dados fictícios para demonstração."""
+    inicio_padrao = date(2026, 1, 1)
+    lancamentos_exemplo = [
+        {"Tipo": "Entrada", "Descrição": "Salário", "Categoria": "Salário", "Valor": 2400.0, "Fixo": True, "Início": inicio_padrao},
+        {"Tipo": "Entrada", "Descrição": "Horas extras", "Categoria": "Horas extras", "Valor": 250.0},
+        {"Descrição": "Aluguel", "Categoria": "Moradia", "Valor": 750.0, "Fixo": True, "Início": inicio_padrao},
+        {"Descrição": "Mercado", "Categoria": "Mercado e alimentação", "Valor": 620.0, "Fixo": True, "Início": inicio_padrao},
+        {"Descrição": "Delivery", "Categoria": "Delivery ou lanche fora", "Valor": 160.0},
+        {"Descrição": "Assinaturas", "Categoria": "Assinaturas", "Valor": 55.0, "Fixo": True, "Início": inicio_padrao},
+        {
+            "Descrição": "Tênis parcelado",
+            "Categoria": "Compras",
+            "Valor": 90.0,
+            "Parcelado": True,
+            "Nº de parcelas": 5,
+            "Parcelas pagas": 2,
+            "Observação": "Parcela atual",
+        },
+    ]
     st.session_state["lancamentos_df"] = pd.DataFrame(
-        [
-            {"Data": date.today(), "Tipo": "Entrada", "Descrição": "Salário", "Categoria": "Salário", "Valor": 2400.0, "Fixo": True, "Parcelado": False, "Nº de parcelas": 1, "Parcelas pagas": 0, "Observação": ""},
-            {"Data": date.today(), "Tipo": "Entrada", "Descrição": "Horas extras", "Categoria": "Horas extras", "Valor": 250.0, "Fixo": False, "Parcelado": False, "Nº de parcelas": 1, "Parcelas pagas": 0, "Observação": ""},
-            {"Data": date.today(), "Tipo": "Gasto", "Descrição": "Aluguel", "Categoria": "Moradia", "Valor": 750.0, "Fixo": True, "Parcelado": False, "Nº de parcelas": 1, "Parcelas pagas": 0, "Observação": ""},
-            {"Data": date.today(), "Tipo": "Gasto", "Descrição": "Mercado", "Categoria": "Mercado e alimentação", "Valor": 620.0, "Fixo": True, "Parcelado": False, "Nº de parcelas": 1, "Parcelas pagas": 0, "Observação": ""},
-            {"Data": date.today(), "Tipo": "Gasto", "Descrição": "Delivery", "Categoria": "Delivery ou lanche fora", "Valor": 160.0, "Fixo": False, "Parcelado": False, "Nº de parcelas": 1, "Parcelas pagas": 0, "Observação": ""},
-            {"Data": date.today(), "Tipo": "Gasto", "Descrição": "Assinaturas", "Categoria": "Assinaturas", "Valor": 55.0, "Fixo": True, "Parcelado": False, "Nº de parcelas": 1, "Parcelas pagas": 0, "Observação": ""},
-            {"Data": date.today(), "Tipo": "Gasto", "Descrição": "Tênis parcelado", "Categoria": "Compras", "Valor": 90.0, "Fixo": False, "Parcelado": True, "Nº de parcelas": 5, "Parcelas pagas": 2, "Observação": "Parcela atual"},
-        ]
+        [montar_lancamento(**item) for item in lancamentos_exemplo]
     )
-    fixos = st.session_state["lancamentos_df"]["Fixo"] == True
-    st.session_state["lancamentos_df"]["Início"] = None
-    st.session_state["lancamentos_df"]["Fim"] = None
-    st.session_state["lancamentos_df"].loc[fixos, "Início"] = date(2026, 1, 1)
     st.session_state["dividas_df"] = pd.DataFrame(
         [{"Dívida": "Cartão", "Falta pagar": 1200.0, "Parcela do mês": 300.0, "Parcelas restantes": 4, "Observação": "Vence dia 10"}]
     )
@@ -869,6 +957,7 @@ def carregar_exemplo() -> None:
 
 
 def tela_inicio() -> None:
+    """Monta a primeira tela com o resumo do app."""
     st.markdown(
         f"""
         <div class="hero">
@@ -898,6 +987,7 @@ def tela_inicio() -> None:
 
 
 def aba_lancamentos() -> pd.DataFrame:
+    """Cuida do cadastro e edição de entradas e gastos."""
     st.subheader("Registrar")
     st.markdown(
         '<p class="note">Adicione entradas e gastos do mês. Use detalhes apenas quando precisar marcar fixos ou parcelas.</p>',
@@ -1000,6 +1090,7 @@ def aba_lancamentos() -> pd.DataFrame:
 
 
 def aba_dividas() -> tuple[pd.DataFrame, float]:
+    """Cuida das dívidas e parcelas cadastradas separadamente."""
     st.subheader("Dívidas e parcelas")
     st.markdown('<p class="note">Acompanhe parcelas do mês usando nomes simples, sem dados pessoais.</p>', unsafe_allow_html=True)
 
@@ -1042,6 +1133,7 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
 
 
 def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnostico: list[dict[str, str]], sugestoes: list[str], resumo_final: dict[str, object]) -> None:
+    """Mostra o resultado do mês com cards, alertas e gráficos."""
     st.subheader("Resultado do mês")
     saldo = resumo["saldo_final"]
     c1, c2 = st.columns(2)
@@ -1080,19 +1172,8 @@ def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnosti
             dados = gastos.groupby("Categoria", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
             dados["Categoria"] = dados["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
             dados["Texto"] = dados["Valor"].map(formatar_moeda)
-            fig = px.bar(dados, x="Valor", y="Categoria", text="Texto", orientation="h", color="Categoria", color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_layout(
-                showlegend=False,
-                xaxis_title="",
-                yaxis_title="",
-                yaxis={"categoryorder": "total ascending"},
-                margin=dict(l=10, r=10, t=10, b=10),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-            )
-            fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
-            fig.update_yaxes(showgrid=False)
+            fig = grafico_barras_horizontais(dados, "Categoria")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, width="stretch")
             st.info(f"{resumo_final['categoria']} foi a categoria que mais pesou este mês.")
     with col_sugestoes:
@@ -1108,7 +1189,7 @@ def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnosti
         dados["Texto"] = dados["Valor"].map(formatar_moeda)
         fig = px.bar(dados, x="Tipo", y="Valor", text="Texto", color="Tipo", color_discrete_map={"Entrou": "#2f7d59", "Saiu": "#c45f4b"})
         fig.update_traces(textposition="outside", cliponaxis=False)
-        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="", margin=dict(l=10, r=10, t=15, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        limpar_grafico(fig)
         aplicar_eixo_moeda(fig)
         st.plotly_chart(fig, width="stretch")
 
@@ -1116,6 +1197,7 @@ def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnosti
 
 
 def aba_metas(saldo: float) -> dict[str, object]:
+    """Calcula quanto guardar por mês para uma meta."""
     st.subheader("Meta para guardar dinheiro")
     st.markdown('<p class="note">Defina um objetivo simples e veja se cabe no dinheiro que sobrou.</p>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 1.4, 1])
@@ -1143,7 +1225,7 @@ def aba_metas(saldo: float) -> dict[str, object]:
         dados = pd.DataFrame({"Mês": list(range(1, int(prazo) + 1)), "Dinheiro guardado": [mensal * mes for mes in range(1, int(prazo) + 1)]})
         fig = px.line(dados, x="Mês", y="Dinheiro guardado", markers=True)
         fig.update_traces(line_color="#2f6f9f")
-        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        limpar_grafico(fig, margem=dict(l=10, r=10, t=30, b=10))
         aplicar_eixo_moeda(fig)
         st.plotly_chart(fig, width="stretch")
 
@@ -1151,6 +1233,7 @@ def aba_metas(saldo: float) -> dict[str, object]:
 
 
 def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
+    """Mostra a simulação de dinheiro guardado ao longo do tempo."""
     st.subheader("Guardando dinheiro")
     st.markdown('<p class="note">Compare caminhos simples para visualizar a diferença de guardar todo mês.</p>', unsafe_allow_html=True)
     st.info("As comparações possuem caráter informativo.")
@@ -1201,11 +1284,7 @@ def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
         }
     )
     dados["Texto"] = dados["Valor"].map(formatar_moeda)
-    fig = px.bar(dados, x="Valor", y="Cenário", text="Texto", orientation="h", color="Cenário", color_discrete_sequence=["#2f7d59", "#2f6f9f", "#b7791f"])
-    fig.update_traces(textposition="outside", cliponaxis=False)
-    fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="", margin=dict(l=10, r=10, t=15, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
-    fig.update_yaxes(showgrid=False)
+    fig = grafico_barras_horizontais(dados, "Cenário", ["#2f7d59", "#2f6f9f", "#b7791f"])
     st.plotly_chart(fig, width="stretch")
 
     with st.expander("Ver evolução mês a mês"):
@@ -1215,6 +1294,7 @@ def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
 
 
 def montar_resumo_exportacao(resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> list[str]:
+    """Monta as linhas usadas no PDF e no resumo exportado."""
     linhas = [
         DISPLAY_NAME,
         f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
@@ -1251,6 +1331,7 @@ def montar_resumo_exportacao(resumo: dict[str, float], resumo_final: dict[str, o
 
 
 def quebrar_texto(texto: str, limite: int = 92) -> list[str]:
+    """Quebra textos longos para caber melhor no PDF."""
     if not texto:
         return [""]
     palavras = texto.split()
@@ -1270,11 +1351,13 @@ def quebrar_texto(texto: str, limite: int = 92) -> list[str]:
 
 
 def escapar_pdf(texto: str) -> str:
+    """Escapa caracteres que têm significado dentro do PDF."""
     texto = texto.encode("latin-1", "replace").decode("latin-1")
     return texto.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def exportar_pdf(linhas: list[str]) -> bytes:
+    """Gera um PDF simples sem depender de biblioteca externa."""
     linhas_pdf: list[str] = []
     for linha in linhas:
         linhas_pdf.extend(quebrar_texto(linha))
@@ -1292,6 +1375,7 @@ def exportar_pdf(linhas: list[str]) -> bytes:
     }
     ids_paginas = []
     for indice, pagina in enumerate(paginas):
+        # O PDF é montado "na mão" para evitar mais uma dependência no projeto.
         conteudo_id = 4 + indice * 2
         pagina_id = conteudo_id + 1
         ids_paginas.append(pagina_id)
@@ -1330,6 +1414,7 @@ def exportar_pdf(linhas: list[str]) -> bytes:
 
 
 def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> bytes:
+    """Exporta o resumo geral do app para Excel."""
     arquivo = BytesIO()
     with pd.ExcelWriter(arquivo, engine="openpyxl") as writer:
         pd.DataFrame({"Gerado em": [datetime.now().strftime("%d/%m/%Y %H:%M")], "App": [DISPLAY_NAME]}).to_excel(writer, index=False, sheet_name="Inicio")
@@ -1348,38 +1433,18 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
         pd.DataFrame([meta]).to_excel(writer, index=False, sheet_name="Meta")
         pd.DataFrame({"Sugestão": sugestoes}).to_excel(writer, index=False, sheet_name="Sugestoes")
         simulacao["tabela"].to_excel(writer, index=False, sheet_name="Guardando")
-        for planilha in writer.sheets.values():
-            for coluna in planilha.columns:
-                maior = max(len(str(celula.value)) if celula.value is not None else 0 for celula in coluna)
-                planilha.column_dimensions[coluna[0].column_letter].width = min(maior + 3, 52)
 
-        for nome_planilha in ["Lancamentos"]:
-            planilha = writer.sheets[nome_planilha]
-            cabecalhos = {celula.value: celula.column_letter for celula in planilha[1]}
-            if "Data" in cabecalhos:
-                for celula in planilha[cabecalhos["Data"]][1:]:
-                    celula.number_format = "DD/MM/YYYY"
-            if "Valor" in cabecalhos:
-                for celula in planilha[cabecalhos["Valor"]][1:]:
-                    celula.number_format = '"R$" #,##0.00'
-
-        planilha_dividas = writer.sheets["Dividas"]
-        cabecalhos_dividas = {celula.value: celula.column_letter for celula in planilha_dividas[1]}
-        for nome_coluna in ["Falta pagar", "Parcela do mês"]:
-            if nome_coluna in cabecalhos_dividas:
-                for celula in planilha_dividas[cabecalhos_dividas[nome_coluna]][1:]:
-                    celula.number_format = '"R$" #,##0.00'
-
-        planilha_simulacao = writer.sheets["Guardando"]
-        cabecalhos_simulacao = {celula.value: celula.column_letter for celula in planilha_simulacao[1]}
-        for nome_coluna, letra in cabecalhos_simulacao.items():
-            if nome_coluna != "Mês":
-                for celula in planilha_simulacao[letra][1:]:
-                    celula.number_format = '"R$" #,##0.00'
+        ajustar_largura_colunas_excel(writer)
+        aplicar_formato_excel(writer, "Lancamentos", ["Valor"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Lancamentos", ["Data"], FORMATO_DATA_EXCEL)
+        aplicar_formato_excel(writer, "Dividas", ["Falta pagar", "Parcela do mês"], FORMATO_MOEDA_EXCEL)
+        colunas_guardando = [coluna for coluna in simulacao["tabela"].columns if coluna != "Mês"]
+        aplicar_formato_excel(writer, "Guardando", colunas_guardando, FORMATO_MOEDA_EXCEL)
     return arquivo.getvalue()
 
 
 def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
+    """Mostra histórico, tabelas de apoio e botões de exportação."""
     st.subheader("Histórico")
     linhas_pdf = montar_resumo_exportacao(resumo, resumo_final, meta, simulacao, sugestoes)
     data_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -1448,7 +1513,7 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
     dados_grafico["Período"] = dados_grafico["Mês"].astype(str) + "/" + dados_grafico["Ano"].astype(str)
     fig = px.line(dados_grafico, x="Período", y="Sobrou/Faltou", markers=True)
     fig.update_traces(line_color="#2f6f9f")
-    fig.update_layout(xaxis_title="", yaxis_title="", margin=dict(l=10, r=10, t=20, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
     aplicar_eixo_moeda(fig)
     st.plotly_chart(fig, width="stretch")
 
@@ -1463,19 +1528,8 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
             categorias_grafico = categorias.groupby("Categoria", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
             categorias_grafico["Categoria"] = categorias_grafico["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
             categorias_grafico["Texto"] = categorias_grafico["Valor"].map(formatar_moeda)
-            fig = px.bar(
-                categorias_grafico,
-                x="Valor",
-                y="Categoria",
-                text="Texto",
-                orientation="h",
-                color="Categoria",
-                color_discrete_sequence=px.colors.qualitative.Set2,
-            )
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="", yaxis={"categoryorder": "total ascending"}, margin=dict(l=10, r=10, t=15, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
-            fig.update_yaxes(showgrid=False)
+            fig = grafico_barras_horizontais(categorias_grafico, "Categoria")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"})
             st.plotly_chart(fig, width="stretch")
 
     with st.expander("Compras parceladas"):
@@ -1489,6 +1543,7 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
 
 
 def barra_lateral() -> None:
+    """Monta os botões fixos da barra lateral."""
     st.sidebar.title("Organização")
     st.sidebar.caption("Controle simples do mês.")
     st.sidebar.divider()
@@ -1514,6 +1569,7 @@ def barra_lateral() -> None:
 
 
 def main() -> None:
+    """Executa o app e organiza as abas principais."""
     configurar_pagina()
     barra_lateral()
 

@@ -1,19 +1,30 @@
 # Organização Financeira na Prática
 
-Aplicativo em Python e Streamlit para organizar entradas, gastos, parcelas, metas e histórico financeiro de forma simples.
+Aplicativo feito em Python com Streamlit para organizar entradas, gastos, dívidas, metas e histórico financeiro. A proposta é ser uma ferramenta simples para visualizar o orçamento do mês, sem transformar o projeto em um sistema financeiro complexo.
 
-## O que o app tem
+## O que dá para fazer
 
-- **Início** com resumo visual do app.
-- **Registrar** para adicionar entradas e gastos rapidamente.
-- Tabela principal com data, tipo, descrição, categoria e valor.
-- Opção **Mostrar detalhes** para fixos, datas, parcelas e observações.
-- **Resultado do mês** com entrou, saiu, sobrou ou faltou.
-- Alertas curtos e sugestões rápidas baseadas nos lançamentos.
-- **Dívidas** para acompanhar parcelas do mês.
-- **Metas** para calcular quanto guardar por mês.
-- **Guardando dinheiro** para comparar dinheiro parado, poupança e aplicação simples.
-- **Histórico** com resumo mensal, evolução anual, Excel e PDF.
+- Registrar entradas e gastos do mês.
+- Separar gastos fixos e variáveis.
+- Marcar compras parceladas.
+- Acompanhar dívidas e parcelas.
+- Ver se o mês fechou com sobra ou falta.
+- Criar uma meta e calcular quanto guardar por mês.
+- Simular dinheiro parado, poupança e uma aplicação simples.
+- Gerar histórico anual e exportar relatórios em Excel ou PDF.
+
+## Estrutura do código
+
+O arquivo principal é o `app.py`. Ele foi deixado em um único arquivo porque o projeto é pequeno, mas está separado por funções:
+
+- constantes e categorias usadas no app;
+- funções de formatação de moeda, data, tabelas e gráficos;
+- funções de limpeza dos dados digitados;
+- cálculos de receitas, gastos, dívidas, metas e simulação;
+- exportação para Excel e PDF;
+- telas do Streamlit.
+
+As funções possuem docstrings curtas para explicar a finalidade de cada parte. Nos trechos menos diretos, como repetição de gastos fixos no histórico e geração manual do PDF, também existem comentários no próprio código.
 
 ## Instalação
 
@@ -52,4 +63,4 @@ executar_app.bat
 5. Compare formas de guardar em **Guardando dinheiro**.
 6. Baixe Excel ou PDF em **Histórico**.
 
-As comparações possuem caráter informativo.
+As simulações e comparações servem apenas como referência para estudo e organização pessoal.
