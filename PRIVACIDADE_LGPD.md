@@ -54,7 +54,7 @@ Os arquivos exportados pelo aplicativo são armazenados exclusivamente:
 
 O aplicativo não possui acesso posterior aos arquivos salvos localmente.
 
-Caso o usuário deseje continuar utilizando as informações posteriormente, poderá baixar o backup em JSON e carregá-lo novamente no próprio app em outro momento.
+Caso o usuário deseje continuar utilizando as informações posteriormente, poderá baixar o backup em JSON ou a planilha Excel exportada e carregá-los novamente no próprio app em outro momento.
 
 ## 6. Segurança
 

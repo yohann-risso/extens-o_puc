@@ -11,7 +11,7 @@ Aplicativo feito em Python com Streamlit para organizar entradas, gastos, dívid
 - Ver se o mês fechou com sobra ou falta.
 - Criar uma meta e calcular quanto guardar por mês.
 - Simular dinheiro parado, poupança e uma aplicação simples.
-- Gerar histórico anual e exportar relatórios em Excel, PDF ou JSON.
+- Gerar histórico anual, exportar Excel/PDF/JSON e importar backups locais em Excel ou JSON.
 - Consultar a Política de Privacidade e LGPD dentro do próprio app.
 
 ## Estrutura do código
@@ -68,7 +68,9 @@ PRIVACIDADE_LGPD.md
 
 Depois, acesse `https://share.streamlit.io`, conecte sua conta do GitHub, selecione o repositório e informe `app.py` como arquivo principal do aplicativo.
 
-O app não usa banco de dados. No Streamlit Cloud, os dados preenchidos ficam apenas na sessão de uso. Para continuar depois, o usuário deve baixar Excel ou JSON na aba **Histórico** e salvar no próprio dispositivo. O JSON pode ser carregado novamente pelo próprio app.
+O app não usa banco de dados. No Streamlit Cloud, os dados preenchidos ficam apenas na sessão de uso. Para continuar depois, o usuário deve baixar Excel ou JSON na aba **Histórico** e salvar no próprio dispositivo. O Excel ou JSON exportado pelo app pode ser carregado novamente em outro acesso.
+
+Os botões principais de **Exportar Excel**, **Exportar JSON** e **Importar arquivo** também ficam na barra lateral do aplicativo.
 
 ## Privacidade
 
@@ -81,7 +83,7 @@ A política completa está no arquivo `PRIVACIDADE_LGPD.md` e também na aba **P
 3. Veja o saldo em **Resultado do mês**.
 4. Crie uma meta simples em **Metas**.
 5. Compare formas de guardar em **Guardando dinheiro**.
-6. Baixe Excel, PDF ou JSON em **Histórico**.
+6. Baixe Excel, PDF ou JSON em **Histórico** ou pela barra lateral.
 7. Consulte privacidade e LGPD na aba **Privacidade e LGPD**.
 
 As simulações e comparações servem apenas como referência para estudo e organização pessoal.

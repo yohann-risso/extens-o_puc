@@ -22,6 +22,10 @@ BCB_BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
 CACHE_TAXAS_BCB = "bcb-parser-v3"
 FORMATO_MOEDA_EXCEL = '"R$" #,##0.00'
 FORMATO_DATA_EXCEL = "DD/MM/YYYY"
+ARQUIVO_EXCEL = "organizacao_financeira.xlsx"
+ARQUIVO_JSON = "organizacao_financeira.json"
+MIME_EXCEL = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MIME_JSON = "application/json"
 
 TIPOS_LANCAMENTO = ["Entrada", "Gasto"]
 CATEGORIAS_ENTRADA = ["Salário", "Horas extras", "Benefícios", "Venda ou bico", "Ajuda recebida", "Outros ganhos"]
@@ -572,6 +576,98 @@ def dataframe_para_registros_json(df: pd.DataFrame) -> list[dict[str, object]]:
     return registros
 
 
+def numero_configuracao(valor: object, padrao: float, minimo: float = 0.0) -> float:
+    """Lê números vindos de JSON/Excel sem quebrar os widgets do Streamlit."""
+    try:
+        if pd.isna(valor):
+            return padrao
+    except (TypeError, ValueError):
+        pass
+    try:
+        numero = float(str(valor).replace(",", "."))
+    except (TypeError, ValueError):
+        numero = padrao
+    return max(minimo, numero)
+
+
+def inteiro_configuracao(valor: object, padrao: int, minimo: int, maximo: int) -> int:
+    """Lê inteiros importados respeitando os limites dos campos do app."""
+    numero = int(numero_configuracao(valor, float(padrao), float(minimo)))
+    return min(max(numero, minimo), maximo)
+
+
+def booleano_configuracao(valor: object, padrao: bool = True) -> bool:
+    """Converte valores booleanos vindos de arquivo local."""
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, str):
+        texto = valor.strip().lower()
+        if texto in {"1", "true", "sim", "s", "yes"}:
+            return True
+        if texto in {"0", "false", "não", "nao", "n", "no"}:
+            return False
+    try:
+        if pd.isna(valor):
+            return padrao
+    except (TypeError, ValueError):
+        pass
+    return bool(valor)
+
+
+def texto_configuracao(valor: object, padrao: str = "") -> str:
+    """Normaliza campos de texto vindos de backup."""
+    try:
+        if pd.isna(valor):
+            return padrao
+    except (TypeError, ValueError):
+        pass
+    return str(valor)
+
+
+def normalizar_configuracoes_backup(configuracoes: object) -> dict[str, object]:
+    """Garante que as configurações importadas cabem nos campos da sessão."""
+    dados = configuracoes if isinstance(configuracoes, dict) else {}
+    return {
+        "somar_dividas": booleano_configuracao(dados.get("somar_dividas", True), True),
+        "meta_objetivo": texto_configuracao(dados.get("meta_objetivo", "")),
+        "meta_valor_total": numero_configuracao(dados.get("meta_valor_total", 1000.0), 1000.0),
+        "meta_prazo_meses": inteiro_configuracao(dados.get("meta_prazo_meses", 8), 8, 1, 240),
+        "sim_valor_inicial": numero_configuracao(dados.get("sim_valor_inicial", 300.0), 300.0),
+        "sim_valor_mensal": numero_configuracao(dados.get("sim_valor_mensal", 100.0), 100.0),
+        "sim_meses": inteiro_configuracao(dados.get("sim_meses", 12), 12, 1, 360),
+    }
+
+
+def obter_configuracoes_backup() -> dict[str, object]:
+    """Reúne as configurações atuais para exportação e restauração local."""
+    return normalizar_configuracoes_backup(
+        {
+            "somar_dividas": st.session_state.get("somar_dividas", True),
+            "meta_objetivo": st.session_state.get("meta_objetivo", ""),
+            "meta_valor_total": st.session_state.get("meta_valor_total", 1000.0),
+            "meta_prazo_meses": st.session_state.get("meta_prazo_meses", 8),
+            "sim_valor_inicial": st.session_state.get("sim_valor_inicial", 300.0),
+            "sim_valor_mensal": st.session_state.get("sim_valor_mensal", 100.0),
+            "sim_meses": st.session_state.get("sim_meses", 12),
+        }
+    )
+
+
+def agendar_importacao(
+    lancamentos: pd.DataFrame,
+    dividas: pd.DataFrame,
+    configuracoes: dict[str, object],
+    mensagem: str,
+) -> None:
+    """Agenda a restauração para a próxima execução, antes da criação dos widgets."""
+    st.session_state["importacao_pendente"] = {
+        "lancamentos_df": normalizar_lancamentos(lancamentos),
+        "dividas_df": normalizar_dividas(dividas),
+        "configuracoes": normalizar_configuracoes_backup(configuracoes),
+        "mensagem": mensagem,
+    }
+
+
 def exportar_json(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> bytes:
     """Gera um backup JSON para o usuário salvar no próprio dispositivo."""
     dados = {
@@ -580,15 +676,7 @@ def exportar_json(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> bytes:
         "observacao": "Backup local gerado pelo usuário. O app não mantém armazenamento permanente.",
         "lancamentos": dataframe_para_registros_json(lancamentos),
         "dividas": dataframe_para_registros_json(dividas),
-        "configuracoes": {
-            "somar_dividas": bool(st.session_state.get("somar_dividas", True)),
-            "meta_objetivo": st.session_state.get("meta_objetivo", ""),
-            "meta_valor_total": valor_para_json(st.session_state.get("meta_valor_total", 1000.0)),
-            "meta_prazo_meses": valor_para_json(st.session_state.get("meta_prazo_meses", 8)),
-            "sim_valor_inicial": valor_para_json(st.session_state.get("sim_valor_inicial", 300.0)),
-            "sim_valor_mensal": valor_para_json(st.session_state.get("sim_valor_mensal", 100.0)),
-            "sim_meses": valor_para_json(st.session_state.get("sim_meses", 12)),
-        },
+        "configuracoes": {chave: valor_para_json(valor) for chave, valor in obter_configuracoes_backup().items()},
     }
     return json.dumps(dados, ensure_ascii=False, indent=2).encode("utf-8")
 
@@ -596,27 +684,77 @@ def exportar_json(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> bytes:
 def importar_json(conteudo: bytes) -> None:
     """Carrega um backup JSON exportado pelo próprio app."""
     dados = json.loads(conteudo.decode("utf-8"))
-    if not isinstance(dados, dict) or "lancamentos" not in dados or "dividas" not in dados:
+    if not isinstance(dados, dict) or ("lancamentos" not in dados and "dividas" not in dados):
         raise ValueError("Arquivo JSON incompatível com este app.")
 
-    importacao = {
-        "lancamentos_df": normalizar_lancamentos(pd.DataFrame(dados.get("lancamentos", []))),
-        "dividas_df": normalizar_dividas(pd.DataFrame(dados.get("dividas", []))),
-        "configuracoes": {},
-    }
-    configuracoes = dados.get("configuracoes", {})
-    if isinstance(configuracoes, dict):
-        importacao["configuracoes"] = {
-            "somar_dividas": bool(configuracoes.get("somar_dividas", True)),
-            "meta_objetivo": str(configuracoes.get("meta_objetivo", "")),
-            "meta_valor_total": float(configuracoes.get("meta_valor_total", 1000.0) or 0.0),
-            "meta_prazo_meses": int(configuracoes.get("meta_prazo_meses", 8) or 1),
-            "sim_valor_inicial": float(configuracoes.get("sim_valor_inicial", 300.0) or 0.0),
-            "sim_valor_mensal": float(configuracoes.get("sim_valor_mensal", 100.0) or 0.0),
-            "sim_meses": int(configuracoes.get("sim_meses", 12) or 1),
+    agendar_importacao(
+        pd.DataFrame(dados.get("lancamentos", [])),
+        pd.DataFrame(dados.get("dividas", [])),
+        dados.get("configuracoes", {}),
+        "Arquivo JSON carregado. Os dados foram restaurados nesta sessão.",
+    )
+
+
+def primeira_linha_planilha(planilhas: dict[str, pd.DataFrame], nome: str) -> dict[str, object]:
+    """Lê a primeira linha de uma aba do Excel, quando ela existir."""
+    tabela = planilhas.get(nome)
+    if tabela is None or tabela.empty:
+        return {}
+    return tabela.iloc[0].to_dict()
+
+
+def importar_excel(conteudo: bytes) -> None:
+    """Carrega uma planilha Excel exportada pelo app."""
+    planilhas = pd.read_excel(BytesIO(conteudo), sheet_name=None)
+    if "Lancamentos" not in planilhas and "Dividas" not in planilhas:
+        raise ValueError("Planilha incompatível com este app.")
+
+    configuracoes = primeira_linha_planilha(planilhas, "Configuracoes")
+    if not configuracoes:
+        meta = primeira_linha_planilha(planilhas, "Meta")
+        configuracoes = {
+            "meta_objetivo": meta.get("objetivo", ""),
+            "meta_valor_total": meta.get("valor_total", 1000.0),
+            "meta_prazo_meses": meta.get("prazo_meses", 8),
         }
 
-    st.session_state["importacao_pendente"] = importacao
+    agendar_importacao(
+        planilhas.get("Lancamentos", pd.DataFrame()),
+        planilhas.get("Dividas", pd.DataFrame()),
+        configuracoes,
+        "Planilha Excel carregada. Os dados foram restaurados nesta sessão.",
+    )
+
+
+def importar_arquivo_local(conteudo: bytes, nome_arquivo: str) -> None:
+    """Importa JSON ou Excel salvo no dispositivo do usuário."""
+    nome = nome_arquivo.lower()
+    if nome.endswith(".json"):
+        importar_json(conteudo)
+        return
+    if nome.endswith(".xlsx"):
+        importar_excel(conteudo)
+        return
+    raise ValueError("Use um arquivo JSON ou Excel exportado por este app.")
+
+
+def controle_importacao_local(container, prefixo: str) -> None:
+    """Mostra o campo de importação reaproveitado na sidebar e no histórico."""
+    arquivo = container.file_uploader(
+        "Selecionar arquivo JSON ou Excel",
+        type=["json", "xlsx"],
+        key=f"{prefixo}_arquivo_local",
+        label_visibility="collapsed",
+    )
+    if container.button("Importar arquivo", width="stretch", key=f"{prefixo}_importar_local"):
+        if arquivo is None:
+            container.warning("Selecione um arquivo JSON ou Excel exportado pelo app.")
+        else:
+            try:
+                importar_arquivo_local(arquivo.getvalue(), arquivo.name)
+                st.rerun()
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as erro:
+                container.error(f"Não foi possível carregar o arquivo: {erro}")
 
 
 def aplicar_importacao_pendente() -> None:
@@ -630,7 +768,10 @@ def aplicar_importacao_pendente() -> None:
     for chave, valor in importacao.get("configuracoes", {}).items():
         st.session_state[chave] = valor
     st.session_state["editor_versao"] = int(st.session_state.get("editor_versao", 0)) + 1
-    st.session_state["mensagem_importacao"] = "Arquivo JSON carregado. Os dados foram restaurados nesta sessão."
+    st.session_state["mensagem_importacao"] = importacao.get(
+        "mensagem",
+        "Arquivo carregado. Os dados foram restaurados nesta sessão.",
+    )
 
 
 def calcular_dividas(dividas: pd.DataFrame) -> float:
@@ -1063,6 +1204,10 @@ def tela_inicio() -> None:
         """,
         unsafe_allow_html=True,
     )
+    st.info(
+        "Seus dados não ficam salvos no servidor. Para continuar utilizando depois, exporte sua planilha ou arquivo JSON."
+    )
+    st.caption("Os arquivos exportados ficam armazenados apenas no seu dispositivo.")
     c1, c2 = st.columns(2)
     with c1:
         card("💰 Entradas", "Anote o que entrou", "Salário, benefício, venda, bico ou ajuda recebida.", "green")
@@ -1504,9 +1649,23 @@ def exportar_pdf(linhas: list[str]) -> bytes:
     return bytes(saida)
 
 
+def anos_historico_exportacao(lancamentos: pd.DataFrame) -> list[int]:
+    """Seleciona anos úteis para o histórico simples exportado no Excel."""
+    anos = {date.today().year}
+    if lancamentos is None or lancamentos.empty:
+        return sorted(anos)
+    for coluna in ["Data", "Início", "Fim"]:
+        if coluna in lancamentos.columns:
+            datas = pd.to_datetime(lancamentos[coluna], errors="coerce").dropna()
+            anos.update(int(ano) for ano in datas.dt.year.unique())
+    return sorted(anos)
+
+
 def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> bytes:
     """Exporta o resumo geral do app para Excel."""
     arquivo = BytesIO()
+    historico = gerar_relatorio_anual(lancamentos, anos_historico_exportacao(lancamentos))
+    historico_simples = historico["mensal"].drop(columns=["Mês nº"], errors="ignore")
     with pd.ExcelWriter(arquivo, engine="openpyxl") as writer:
         pd.DataFrame({"Gerado em": [datetime.now().strftime("%d/%m/%Y %H:%M")], "App": [DISPLAY_NAME]}).to_excel(writer, index=False, sheet_name="Inicio")
         lancamentos.to_excel(writer, index=False, sheet_name="Lancamentos")
@@ -1522,6 +1681,8 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
             ]
         ).to_excel(writer, index=False, sheet_name="Resumo")
         pd.DataFrame([meta]).to_excel(writer, index=False, sheet_name="Meta")
+        pd.DataFrame([obter_configuracoes_backup()]).to_excel(writer, index=False, sheet_name="Configuracoes")
+        historico_simples.to_excel(writer, index=False, sheet_name="Historico")
         pd.DataFrame({"Sugestão": sugestoes}).to_excel(writer, index=False, sheet_name="Sugestoes")
         simulacao["tabela"].to_excel(writer, index=False, sheet_name="Guardando")
 
@@ -1529,6 +1690,9 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
         aplicar_formato_excel(writer, "Lancamentos", ["Valor"], FORMATO_MOEDA_EXCEL)
         aplicar_formato_excel(writer, "Lancamentos", ["Data"], FORMATO_DATA_EXCEL)
         aplicar_formato_excel(writer, "Dividas", ["Falta pagar", "Parcela do mês"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Meta", ["valor_total", "valor_mensal_necessario"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Configuracoes", ["meta_valor_total", "sim_valor_inicial", "sim_valor_mensal"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Historico", COLUNAS_RESUMO_ANUAL, FORMATO_MOEDA_EXCEL)
         colunas_guardando = [coluna for coluna in simulacao["tabela"].columns if coluna != "Mês"]
         aplicar_formato_excel(writer, "Guardando", colunas_guardando, FORMATO_MOEDA_EXCEL)
     return arquivo.getvalue()
@@ -1537,9 +1701,6 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
 def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
     """Mostra histórico, tabelas de apoio e botões de exportação."""
     st.subheader("Histórico")
-    mensagem_importacao = st.session_state.pop("mensagem_importacao", None)
-    if mensagem_importacao:
-        st.success(mensagem_importacao)
 
     linhas_pdf = montar_resumo_exportacao(resumo, resumo_final, meta, simulacao, sugestoes)
     data_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -1548,8 +1709,8 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         st.download_button(
             "Baixar Excel",
             data=exportar_excel(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes),
-            file_name=f"organizacao_financeira_{data_arquivo}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_name=ARQUIVO_EXCEL,
+            mime=MIME_EXCEL,
             width="stretch",
         )
     with c2:
@@ -1564,23 +1725,14 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         st.download_button(
             "Baixar JSON",
             data=exportar_json(lancamentos, dividas),
-            file_name=f"organizacao_financeira_{data_arquivo}.json",
-            mime="application/json",
+            file_name=ARQUIVO_JSON,
+            mime=MIME_JSON,
             width="stretch",
         )
 
-    with st.expander("Carregar JSON salvo no dispositivo"):
-        st.markdown('<p class="note">Use apenas arquivos JSON exportados por este app.</p>', unsafe_allow_html=True)
-        arquivo_json = st.file_uploader("Selecionar arquivo JSON", type=["json"], label_visibility="collapsed")
-        if st.button("Carregar JSON", width="content"):
-            if arquivo_json is None:
-                st.warning("Selecione um arquivo JSON exportado pelo app.")
-            else:
-                try:
-                    importar_json(arquivo_json.getvalue())
-                    st.rerun()
-                except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as erro:
-                    st.error(f"Não foi possível carregar o JSON: {erro}")
+    with st.expander("Importar arquivo salvo no dispositivo"):
+        st.markdown('<p class="note">Use apenas arquivos JSON ou Excel exportados por este app.</p>', unsafe_allow_html=True)
+        controle_importacao_local(st, "historico")
 
     st.markdown("#### Resumo mensal")
     c3, c4 = st.columns(2)
@@ -1693,7 +1845,7 @@ Os dados preenchidos permanecem apenas durante a sessão de uso, não são vendi
 
 Os arquivos exportados pelo aplicativo são armazenados exclusivamente no computador, celular ou dispositivo pessoal escolhido pelo usuário.
 
-O aplicativo não possui acesso posterior aos arquivos salvos localmente. O usuário pode baixar um backup em JSON para carregar novamente no próprio app em outro momento.
+O aplicativo não possui acesso posterior aos arquivos salvos localmente. O usuário pode baixar um backup em JSON ou uma planilha Excel para carregar novamente no próprio app em outro momento.
 
 ### 6. Segurança
 
@@ -1728,7 +1880,7 @@ Em caso de dúvidas relacionadas ao funcionamento do aplicativo ou privacidade d
     )
 
 
-def barra_lateral() -> None:
+def barra_lateral(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
     """Monta os botões fixos da barra lateral."""
     st.sidebar.title("Organização")
     st.sidebar.caption("Controle simples do mês.")
@@ -1751,7 +1903,26 @@ def barra_lateral() -> None:
         st.cache_data.clear()
         st.rerun()
     st.sidebar.divider()
-    st.sidebar.caption("No Streamlit Cloud, salve seus dados baixando Excel ou JSON no próprio dispositivo.")
+    st.sidebar.subheader("Salvar dados")
+    st.sidebar.caption("Seus dados não ficam salvos no servidor. Para continuar depois, exporte Excel ou JSON.")
+    st.sidebar.download_button(
+        "Exportar Excel",
+        data=exportar_excel(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes),
+        file_name=ARQUIVO_EXCEL,
+        mime=MIME_EXCEL,
+        width="stretch",
+    )
+    st.sidebar.download_button(
+        "Exportar JSON",
+        data=exportar_json(lancamentos, dividas),
+        file_name=ARQUIVO_JSON,
+        mime=MIME_JSON,
+        width="stretch",
+    )
+    with st.sidebar.expander("Importar arquivo"):
+        st.caption("Carregue JSON ou Excel salvo no seu dispositivo.")
+        controle_importacao_local(st, "sidebar")
+    st.sidebar.caption("Os arquivos exportados ficam armazenados apenas no seu dispositivo.")
     st.sidebar.caption("As comparações possuem caráter informativo.")
 
 
@@ -1759,7 +1930,9 @@ def main() -> None:
     """Executa o app e organiza as abas principais."""
     configurar_pagina()
     aplicar_importacao_pendente()
-    barra_lateral()
+    mensagem_importacao = st.session_state.pop("mensagem_importacao", None)
+    if mensagem_importacao:
+        st.success(mensagem_importacao)
 
     abas = st.tabs(["Início", "Registrar", "Resultado do mês", "Dívidas", "Metas", "Guardando dinheiro", "Histórico", "Privacidade e LGPD"])
 
@@ -1797,6 +1970,8 @@ def main() -> None:
 
     with abas[7]:
         tela_privacidade()
+
+    barra_lateral(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes)
 
     st.caption("As comparações possuem caráter informativo.")
 
