@@ -36,9 +36,9 @@ Depois da publicação, o Streamlit gera um link web para acesso pelo navegador.
 
 ### Dados do usuário no Streamlit Cloud
 
-O app não usa banco de dados. Os dados preenchidos ficam na sessão de uso do Streamlit Cloud e podem ser perdidos quando a sessão for encerrada ou reiniciada.
+O app não usa banco de dados. Os dados preenchidos ficam na sessão de uso do Streamlit Cloud e em uma cópia automática no localStorage do navegador, o que ajuda a recuperar o preenchimento após F5 ou queda de conexão.
 
-Para guardar as informações, o usuário deve:
+Para guardar as informações fora do navegador, o usuário deve:
 
 1. Abrir a aba **Histórico**.
 2. Baixar o arquivo Excel ou JSON.

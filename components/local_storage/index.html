@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Local storage bridge</title>
+  <style>
+    html,
+    body {
+      background: transparent;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    const COMPONENT_READY = "streamlit:componentReady";
+    const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
+    const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
+    const RENDER = "streamlit:render";
+    const API_VERSION = 1;
+
+    let lastRequestId = null;
+
+    function send(type, payload) {
+      window.parent.postMessage(
+        Object.assign({ isStreamlitMessage: true, type }, payload || {}),
+        "*"
+      );
+    }
+
+    function setComponentValue(value) {
+      send(SET_COMPONENT_VALUE, { value, dataType: "json" });
+    }
+
+    function setFrameHeight(height) {
+      send(SET_FRAME_HEIGHT, { height });
+    }
+
+    function finish(value) {
+      setComponentValue(value);
+      setFrameHeight(0);
+    }
+
+    function handleRender(event) {
+      const message = event.data || {};
+      if (message.type !== RENDER) {
+        return;
+      }
+
+      const args = message.args || {};
+      const action = args.action;
+      const storageKey = args.storageKey;
+      const requestId = args.requestId || `${action}:default`;
+
+      if (!action || !storageKey || requestId === lastRequestId) {
+        return;
+      }
+      lastRequestId = requestId;
+
+      try {
+        if (action === "load") {
+          finish({
+            status: "loaded",
+            requestId,
+            key: storageKey,
+            raw: window.localStorage.getItem(storageKey),
+          });
+          return;
+        }
+
+        if (action === "save") {
+          const raw = JSON.stringify(args.payload || {});
+          window.localStorage.setItem(storageKey, raw);
+          finish({
+            status: "saved",
+            requestId,
+            key: storageKey,
+            bytes: raw.length,
+          });
+          return;
+        }
+
+        if (action === "clear") {
+          window.localStorage.removeItem(storageKey);
+          finish({
+            status: "cleared",
+            requestId,
+            key: storageKey,
+          });
+          return;
+        }
+
+        finish({
+          status: "error",
+          requestId,
+          key: storageKey,
+          message: `Ação desconhecida: ${action}`,
+        });
+      } catch (error) {
+        finish({
+          status: "error",
+          requestId,
+          key: storageKey,
+          message: error && error.message ? error.message : String(error),
+        });
+      }
+    }
+
+    window.addEventListener("message", handleRender);
+    send(COMPONENT_READY, { apiVersion: API_VERSION });
+    setFrameHeight(0);
+  </script>
+</body>
+</html>

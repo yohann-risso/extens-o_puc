@@ -24,6 +24,7 @@ A proposta é educativa. O aplicativo não pede login, não usa dados bancários
 - **Pandas** para tratar tabelas e cálculos.
 - **Plotly** para os gráficos.
 - **OpenPyXL** para gerar arquivos Excel.
+- **localStorage do navegador** para salvar automaticamente o preenchimento.
 - API pública do **Banco Central do Brasil** para buscar referências como Selic e TR.
 - **Streamlit Cloud** como opção de publicação web.
 
@@ -67,9 +68,9 @@ O app gera:
 
 ## Privacidade e Streamlit Cloud
 
-O app não usa login nem banco de dados. No Streamlit Cloud, as informações digitadas ficam na sessão de uso e não são armazenadas permanentemente pelo projeto.
+O app não usa login nem banco de dados. No Streamlit Cloud, as informações digitadas ficam na sessão de uso e em uma cópia automática no localStorage do navegador, sem armazenamento permanente em servidor do projeto.
 
-Para continuar depois, o usuário deve baixar Excel ou JSON e salvar o arquivo no próprio computador ou dispositivo pessoal. O JSON pode ser carregado novamente no app.
+Para manter uma cópia fora do navegador, o usuário pode baixar Excel ou JSON e salvar o arquivo no próprio computador ou dispositivo pessoal. O JSON pode ser carregado novamente no app.
 
 ## Observação
 

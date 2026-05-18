@@ -27,11 +27,11 @@ As informações inseridas pelo usuário são preenchidas voluntariamente apenas
 
 ## 3. Uso no Streamlit Cloud
 
-Na versão publicada no Streamlit Cloud, os dados digitados são processados temporariamente na sessão do aplicativo para que a interface funcione.
+Na versão publicada no Streamlit Cloud, os dados digitados são processados na sessão do aplicativo e uma cópia automática é mantida no localStorage do próprio navegador para recuperação após F5 ou queda de conexão.
 
 O projeto não usa banco de dados, login, armazenamento permanente em servidor, publicidade ou ferramentas próprias de rastreamento.
 
-Ao encerrar ou reiniciar a sessão, as informações preenchidas podem ser perdidas. Para guardar os dados, o usuário deve baixar os arquivos Excel ou JSON e salvá-los no próprio dispositivo.
+Ao limpar os dados no aplicativo, a cópia local do navegador também é removida. Para guardar uma cópia fora do navegador, o usuário pode baixar os arquivos Excel ou JSON e salvá-los no próprio dispositivo.
 
 ## 4. Armazenamento das informações
 
@@ -39,7 +39,8 @@ O aplicativo não realiza armazenamento permanente de dados financeiros em servi
 
 Os dados preenchidos:
 
-- permanecem apenas durante a sessão de uso;
+- permanecem durante a sessão de uso;
+- permanecem também no armazenamento local do navegador;
 - não são vendidos;
 - não são utilizados para fins comerciais;
 - não são compartilhados voluntariamente com terceiros pelo responsável do projeto.
@@ -49,9 +50,10 @@ Os dados preenchidos:
 Os arquivos exportados pelo aplicativo são armazenados exclusivamente:
 
 - no computador;
+- no navegador usado para acessar o app;
 - no dispositivo pessoal escolhido pelo usuário.
 
-O aplicativo não possui acesso posterior aos arquivos salvos localmente.
+O aplicativo não possui acesso posterior aos arquivos salvos localmente fora do navegador.
 
 Caso o usuário deseje continuar utilizando as informações posteriormente, poderá baixar o backup em JSON ou a planilha Excel exportada e carregá-los novamente no próprio app em outro momento.
 

@@ -2,7 +2,7 @@
 
 Aplicativo em Python com Streamlit para organizar entradas, gastos, dívidas, metas e histórico financeiro de forma simples, local e educativa.
 
-O projeto foi pensado para uso cotidiano, sem login, banco de dados ou coleta de informações sensíveis. No Streamlit Cloud, os dados ficam apenas na sessão temporária; para continuar depois, o usuário baixa um backup JSON ou uma planilha Excel no próprio dispositivo.
+O projeto foi pensado para uso cotidiano, sem login, banco de dados ou coleta de informações sensíveis. No Streamlit Cloud, os dados ficam na sessão temporária e em uma cópia automática no localStorage do navegador; o usuário também pode baixar backup JSON ou planilha Excel no próprio dispositivo.
 
 ## Screenshots
 
@@ -21,6 +21,7 @@ O projeto foi pensado para uso cotidiano, sem login, banco de dados ou coleta de
 - Histórico anual com resumo mês a mês e categorias principais.
 - Exportação em Excel, PDF visual e JSON.
 - Importação de backup JSON ou Excel exportado pelo próprio app.
+- Salvamento automático no navegador para resistir a F5 ou queda de conexão.
 - Política de Privacidade e LGPD dentro do aplicativo.
 
 ## Tecnologias
@@ -45,7 +46,7 @@ O app fica concentrado em `app.py` porque o projeto é pequeno e acadêmico, mas
 Modelo de funcionamento:
 
 ```text
-Usuário -> Streamlit Cloud -> Sessão temporária -> Backup local do usuário
+Usuário -> Streamlit Cloud -> Sessão temporária -> localStorage do navegador -> Backup local do usuário
 ```
 
 Não há autenticação, banco de dados, armazenamento permanente em servidor ou integração com serviços financeiros.
@@ -54,7 +55,7 @@ Não há autenticação, banco de dados, armazenamento permanente em servidor ou
 
 O aplicativo não solicita CPF, senha, dados bancários, cartão de crédito ou documentos pessoais.
 
-As informações digitadas são usadas apenas durante a sessão para calcular e exibir os resultados. Os arquivos exportados ficam exclusivamente no dispositivo escolhido pelo usuário.
+As informações digitadas são usadas para calcular e exibir os resultados. Uma cópia automática fica no localStorage do navegador do usuário, e os arquivos exportados ficam exclusivamente no dispositivo escolhido pelo usuário.
 
 A política completa está em `PRIVACIDADE_LGPD.md` e também na aba **Privacidade e LGPD** do app.
 
@@ -119,6 +120,7 @@ Passos:
 
 - Exportar Excel, JSON e PDF.
 - Importar JSON e Excel.
+- Atualizar a página com F5 e confirmar que os dados voltam automaticamente.
 - Testar a restauração depois de limpar os dados.
 - Conferir tabelas, gráficos, sidebar e botões em tela mobile.
 - Validar se os nomes dos arquivos aparecem com ano e mês.

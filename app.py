@@ -9,6 +9,7 @@ para facilitar manutenção e apresentação.
 from datetime import date, datetime, timedelta
 from io import BytesIO
 import base64
+import hashlib
 import json
 from math import ceil
 from pathlib import Path
@@ -17,7 +18,9 @@ from urllib.request import urlopen
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 DISPLAY_NAME = "Organização Financeira na Prática"
@@ -33,6 +36,30 @@ FORMATO_DATA_EXCEL = "DD/MM/YYYY"
 PREFIXO_ARQUIVO = "controle-financeiro"
 MIME_EXCEL = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 MIME_JSON = "application/json"
+LOCAL_STORAGE_KEY = "organizacao-financeira-na-pratica:v1"
+LOCAL_STORAGE_SCHEMA = 1
+LOCAL_STORAGE_COMPONENT_DIR = PROJECT_ROOT / "components" / "local_storage"
+CORES_GRAFICO = {
+    "verde": "#0f9f6e",
+    "azul": "#2563eb",
+    "vermelho": "#e5484d",
+    "dourado": "#d97706",
+    "ciano": "#0891b2",
+    "roxo": "#7c3aed",
+    "cinza": "#64748b",
+    "linha": "#d9e2ec",
+    "fundo": "#f6f8fb",
+}
+PALETA_GRAFICO = [
+    CORES_GRAFICO["verde"],
+    CORES_GRAFICO["azul"],
+    CORES_GRAFICO["vermelho"],
+    CORES_GRAFICO["dourado"],
+    CORES_GRAFICO["ciano"],
+    CORES_GRAFICO["roxo"],
+    "#475569",
+]
+CONFIG_GRAFICO = {"displayModeBar": False, "responsive": True}
 
 TIPOS_LANCAMENTO = ["Entrada", "Gasto"]
 CATEGORIAS_ENTRADA = ["Salário", "Horas extras", "Benefícios", "Venda ou bico", "Ajuda recebida", "Outros ganhos"]
@@ -134,6 +161,11 @@ ABAS_APP = [
     "Histórico",
     "Privacidade e LGPD",
 ]
+
+local_storage_bridge = components.declare_component(
+    "local_storage_bridge",
+    path=str(LOCAL_STORAGE_COMPONENT_DIR),
+)
 
 
 def formatar_moeda(valor: float) -> str:
@@ -282,27 +314,52 @@ def configurar_pagina() -> None:
         """
         <style>
         :root {
-            --bg: #f4f6f2;
+            --bg: #f6f8fb;
             --panel: #ffffff;
-            --ink: #172026;
-            --muted: #64717c;
-            --line: #dfe6de;
-            --green: #2f7d59;
-            --blue: #2f6f9f;
-            --red: #c45f4b;
-            --gold: #b7791f;
+            --panel-alt: #eef2f7;
+            --ink: #111827;
+            --muted: #667085;
+            --line: #d9e2ec;
+            --green: #0f9f6e;
+            --green-strong: #087f5b;
+            --green-soft: #e8f8f1;
+            --blue: #2563eb;
+            --blue-soft: #edf4ff;
+            --red: #e5484d;
+            --red-soft: #fff1f1;
+            --gold: #d97706;
+            --gold-soft: #fff7e8;
+            --shadow: 0 14px 34px rgba(15, 23, 42, .08);
+            --shadow-soft: 0 8px 24px rgba(15, 23, 42, .055);
         }
-        .stApp { background: var(--bg); }
+        .stApp {
+            background:
+                linear-gradient(180deg, rgba(255,255,255,.78), rgba(255,255,255,0) 240px),
+                var(--bg);
+            color: var(--ink);
+        }
+        section[data-testid="stSidebar"] {
+            background: var(--panel-alt);
+            border-right: 1px solid var(--line);
+        }
         .main .block-container { max-width: 1120px; padding-top: 1.1rem; padding-bottom: 3rem; }
-        h1, h2, h3 { color: var(--ink); letter-spacing: 0; }
+        h1, h2, h3 { color: var(--ink); letter-spacing: 0; font-weight: 760; }
         .hero {
             background: var(--panel);
             border: 1px solid var(--line);
-            border-left: 7px solid var(--green);
             border-radius: 8px;
-            padding: 1.25rem 1.35rem;
-            box-shadow: 0 12px 30px rgba(23, 32, 38, .06);
+            box-shadow: var(--shadow);
             margin-bottom: 1rem;
+            overflow: hidden;
+            padding: 1.25rem 1.35rem;
+            position: relative;
+        }
+        .hero::before {
+            background: linear-gradient(90deg, var(--green), var(--blue), var(--gold));
+            content: "";
+            height: 5px;
+            inset: 0 0 auto 0;
+            position: absolute;
         }
         .brand-logo {
             display: block;
@@ -338,75 +395,76 @@ def configurar_pagina() -> None:
         .hero p { color: var(--muted); margin: .15rem 0; max-width: 900px; }
         .chip-row { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; }
         .chip {
-            border: 1px solid #d8e7dc;
-            background: #edf6ef;
-            color: #244b38;
+            border: 1px solid #ccebdd;
+            background: var(--green-soft);
+            color: #07543d;
             border-radius: 999px;
             padding: .34rem .62rem;
             font-size: .86rem;
-            font-weight: 650;
+            font-weight: 700;
         }
         .metric-card {
             background: var(--panel);
             border: 1px solid var(--line);
             border-radius: 8px;
+            box-shadow: var(--shadow-soft);
             min-height: 148px;
+            overflow: hidden;
             padding: 1.15rem;
-            box-shadow: 0 8px 22px rgba(23, 32, 38, .055);
+            position: relative;
+            transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
         }
-        .metric-card.green { border-top: 5px solid var(--green); }
-        .metric-card.blue { border-top: 5px solid var(--blue); }
-        .metric-card.red { border-top: 5px solid var(--red); }
-        .metric-card.gold { border-top: 5px solid var(--gold); }
+        .metric-card:hover {
+            border-color: #b8c4d4;
+            box-shadow: var(--shadow);
+            transform: translateY(-1px);
+        }
+        .metric-card::before {
+            content: "";
+            height: 4px;
+            inset: 0 0 auto 0;
+            position: absolute;
+        }
+        .metric-card.green::before { background: var(--green); }
+        .metric-card.blue::before { background: var(--blue); }
+        .metric-card.red::before { background: var(--red); }
+        .metric-card.gold::before { background: var(--gold); }
         .metric-label { color: var(--muted); font-size: .92rem; margin-bottom: .5rem; }
         .metric-value { color: var(--ink); font-size: clamp(1.22rem, 2vw, 1.72rem); font-weight: 780; line-height: 1.15; }
         .metric-help { color: var(--muted); font-size: .88rem; margin-top: .55rem; line-height: 1.35; }
-        .note {
-            color: var(--muted);
-            font-size: .95rem;
-            margin-top: -.25rem;
-            margin-bottom: .75rem;
-        }
         .panel {
             background: var(--panel);
             border: 1px solid var(--line);
+            border-left: 4px solid var(--blue);
             border-radius: 8px;
+            box-shadow: var(--shadow-soft);
             padding: 1.05rem 1.1rem;
             margin: .65rem 0;
         }
         .total-line {
-            background: #f0f6f8;
-            border: 1px solid #d8e7ee;
+            background: var(--blue-soft);
+            border: 1px solid #c8dcff;
             border-radius: 8px;
-            color: #264653;
+            color: #173b8f;
             font-weight: 740;
             margin-top: .65rem;
             padding: .7rem .85rem;
         }
         .empty-state {
-            background: #ffffff;
-            border: 1px dashed #cfd9cf;
+            background: var(--panel);
+            border: 1px dashed #bdc8d6;
             border-radius: 8px;
             color: var(--muted);
             padding: 1rem 1.05rem;
             margin: .75rem 0;
         }
         .empty-state strong { color: var(--ink); }
-        .backup-hint {
-            background: #edf6ef;
-            border: 1px solid #cfe3d4;
-            border-radius: 8px;
-            color: #244b38;
-            font-weight: 650;
-            padding: .7rem .8rem;
-            margin: .5rem 0 .75rem 0;
-        }
         .app-footer {
             align-items: center;
-            background: #ffffff;
+            background: var(--panel);
             border: 1px solid var(--line);
             border-radius: 8px;
-            box-shadow: 0 8px 22px rgba(23, 32, 38, .045);
+            box-shadow: var(--shadow-soft);
             display: flex;
             gap: 1rem;
             justify-content: space-between;
@@ -420,10 +478,9 @@ def configurar_pagina() -> None:
         }
         .footer-copy strong { color: var(--ink); font-size: .98rem; }
         .footer-copy span { color: var(--ink); font-weight: 650; }
-        .footer-copy small { color: var(--muted); }
         .footer-institution {
             align-items: center;
-            color: #244b38;
+            color: #07543d;
             display: flex;
             flex-shrink: 0;
             font-weight: 750;
@@ -434,10 +491,63 @@ def configurar_pagina() -> None:
             object-fit: contain;
             width: auto;
         }
-        div[data-testid="stAlert"] { border-radius: 8px; }
+        .stButton > button,
+        .stDownloadButton > button {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--ink);
+            font-weight: 650;
+            transition: background .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+        }
+        .stButton > button:hover,
+        .stDownloadButton > button:hover {
+            background: #f8fbff;
+            border-color: #aebbd0;
+            color: var(--blue);
+            transform: translateY(-1px);
+        }
+        .stButton > button:focus:not(:active),
+        .stDownloadButton > button:focus:not(:active) {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .14);
+        }
+        .stButton button[kind="primary"],
+        .stDownloadButton button[kind="primary"],
+        button[kind="primary"] {
+            background: var(--green);
+            border-color: var(--green);
+            color: #ffffff;
+        }
+        .stButton button[kind="primary"]:hover,
+        .stDownloadButton button[kind="primary"]:hover,
+        button[kind="primary"]:hover {
+            background: var(--green-strong);
+            border-color: var(--green-strong);
+            color: #ffffff;
+        }
+        div[data-testid="stAlert"] {
+            border: 1px solid rgba(148, 163, 184, .24);
+            border-radius: 8px;
+            box-shadow: var(--shadow-soft);
+        }
+        div[data-testid="stDataFrame"],
+        div[data-testid="stDataEditor"] {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        div[role="radiogroup"] label {
+            border: 1px solid transparent;
+            border-radius: 999px;
+            padding: .16rem .34rem;
+        }
+        div[role="radiogroup"] label:hover {
+            background: rgba(255, 255, 255, .82);
+            border-color: var(--line);
+        }
         .stTabs [data-baseweb="tab-list"] { gap: .35rem; flex-wrap: wrap; }
         .stTabs [data-baseweb="tab"] {
-            background: #ffffff;
+            background: var(--panel);
             border: 1px solid var(--line);
             border-radius: 999px;
             padding: .45rem .8rem;
@@ -484,11 +594,6 @@ def panel_html(titulo: str, texto: str) -> None:
     st.markdown(f'<div class="panel"><strong>{titulo}</strong><br>{texto}</div>', unsafe_allow_html=True)
 
 
-def backup_hint(texto: str) -> None:
-    """Reforça que o backup é local e depende do download do usuário."""
-    st.markdown(f'<div class="backup-hint">{texto}</div>', unsafe_allow_html=True)
-
-
 def logo_barra_lateral() -> None:
     """Mostra o logo do app no topo da barra lateral."""
     st.sidebar.markdown(logo_html("brand-logo sidebar-logo"), unsafe_allow_html=True)
@@ -506,7 +611,6 @@ def rodape_institucional() -> None:
             <div class="footer-copy">
                 <strong>{DISPLAY_NAME}</strong>
                 <span>desenvolvido por Yohann da Rocha Risso</span>
-                <small>As comparações possuem caráter informativo.</small>
             </div>
             <div class="footer-institution">
                 {brasao_html}
@@ -545,17 +649,35 @@ def rerun_preservando_tela() -> None:
     st.rerun()
 
 
-def limpar_grafico(fig, margem: dict[str, int] | None = None):
+def limpar_grafico(
+    fig,
+    margem: dict[str, int] | None = None,
+    mostrar_legenda: bool = False,
+    altura: int | None = 320,
+):
     """Deixa o gráfico com aparência mais limpa para caber no Streamlit."""
     fig.update_layout(
-        showlegend=False,
+        showlegend=mostrar_legenda,
         xaxis_title="",
         yaxis_title="",
-        margin=margem or dict(l=10, r=10, t=15, b=10),
+        margin=margem or dict(l=10, r=10, t=18, b=10),
+        height=altura,
+        font=dict(color="#111827", size=12),
+        hoverlabel=dict(bgcolor="#ffffff", bordercolor=CORES_GRAFICO["linha"], font_size=12),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        legend_title_text="",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        bargap=0.28,
     )
+    fig.update_xaxes(showline=False, zeroline=False, gridcolor="rgba(100, 116, 139, .14)")
+    fig.update_yaxes(showline=False, zeroline=False, gridcolor="rgba(100, 116, 139, .10)")
     return fig
+
+
+def mostrar_grafico(fig) -> None:
+    """Mostra gráficos Plotly sem barra de ferramentas visível."""
+    st.plotly_chart(fig, width="stretch", config=CONFIG_GRAFICO)
 
 
 def grafico_barras_horizontais(
@@ -564,80 +686,196 @@ def grafico_barras_horizontais(
     cores: list[str] | None = None,
 ):
     """Cria gráfico horizontal para comparações de valores."""
-    sequencia_cores = cores if cores is not None else px.colors.qualitative.Set2
+    sequencia_cores = cores if cores is not None else PALETA_GRAFICO
+    altura = max(260, min(460, 90 + len(dados) * 42))
     fig = px.bar(
         dados,
         x="Valor",
         y=eixo_y,
-        text="Texto",
         orientation="h",
         color=eixo_y,
         color_discrete_sequence=sequencia_cores,
-    )
-    fig.update_traces(textposition="outside", cliponaxis=False)
-    limpar_grafico(fig)
-    fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
-    fig.update_yaxes(showgrid=False)
-    return fig
-
-
-def grafico_barras_verticais(
-    dados: pd.DataFrame,
-    eixo_x: str,
-    cores: list[str] | None = None,
-    mapa_cores: dict[str, str] | None = None,
-):
-    """Cria gráfico vertical para comparações curtas."""
-    sequencia_cores = cores if cores is not None else px.colors.qualitative.Set2
-    fig = px.bar(
-        dados,
-        x=eixo_x,
-        y="Valor",
-        text="Texto",
-        color=eixo_x,
-        color_discrete_sequence=sequencia_cores,
-        color_discrete_map=mapa_cores,
-    )
-    fig.update_traces(textposition="outside", cliponaxis=False)
-    limpar_grafico(fig)
-    aplicar_eixo_moeda(fig)
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
-    return fig
-
-
-def grafico_rosca(
-    dados: pd.DataFrame,
-    coluna_nome: str,
-    coluna_valor: str = "Valor",
-    cores: list[str] | None = None,
-):
-    """Cria gráfico de rosca para mostrar composição."""
-    dados_grafico = dados[dados[coluna_valor] > 0].copy()
-    dados_grafico["Texto"] = dados_grafico[coluna_valor].map(formatar_moeda)
-    fig = px.pie(
-        dados_grafico,
-        names=coluna_nome,
-        values=coluna_valor,
-        hole=0.55,
-        color_discrete_sequence=cores or ["#2f7d59", "#2f6f9f", "#c45f4b", "#b7791f", "#7b61a8"],
         custom_data=["Texto"],
     )
     fig.update_traces(
-        textinfo="label+percent",
-        textposition="inside",
-        hovertemplate="%{label}<br>%{customdata[0]}<extra></extra>",
+        marker_line_width=0,
+        hovertemplate="%{y}<br>%{customdata[0]}<extra></extra>",
     )
-    limpar_grafico(fig, margem=dict(l=10, r=10, t=15, b=10))
+    limpar_grafico(fig, altura=altura)
+    fig.update_xaxes(showgrid=True, tickprefix="R$ ", separatethousands=True)
+    fig.update_yaxes(showgrid=False)
     return fig
 
 
-def grafico_linha_moeda(dados: pd.DataFrame, eixo_x: str, eixo_y: str, cor: str = "#2f6f9f"):
+def grafico_linha_moeda(dados: pd.DataFrame, eixo_x: str, eixo_y: str, cor: str = "#2563eb"):
     """Cria linha simples para evolução de valores em reais."""
-    fig = px.line(dados, x=eixo_x, y=eixo_y, markers=True)
-    fig.update_traces(line_color=cor)
-    limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
+    dados_grafico = dados.copy()
+    dados_grafico["Texto"] = dados_grafico[eixo_y].map(formatar_moeda)
+    fig = px.line(dados_grafico, x=eixo_x, y=eixo_y, markers=True, custom_data=["Texto"])
+    fig.update_traces(
+        line=dict(color=cor, width=3),
+        marker=dict(size=7),
+        hovertemplate="%{x}<br>%{customdata[0]}<extra></extra>",
+    )
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10), altura=340)
     aplicar_eixo_moeda(fig)
+    return fig
+
+
+def grafico_destino_do_mes(resumo: dict[str, float]):
+    """Mostra em uma barra única para onde o dinheiro foi."""
+    saldo = float(resumo["saldo_final"])
+    linhas = [
+        ("Fixos", float(resumo["total_fixos"]), CORES_GRAFICO["dourado"]),
+        ("Variáveis", float(resumo["total_variaveis"]), CORES_GRAFICO["azul"]),
+        ("Parcelas", float(resumo["total_dividas"]), CORES_GRAFICO["vermelho"]),
+    ]
+    if saldo > 0:
+        linhas.append(("Sobra", saldo, CORES_GRAFICO["verde"]))
+
+    dados = pd.DataFrame(linhas, columns=["Grupo", "Valor", "Cor"])
+    dados = dados[dados["Valor"] > 0].copy()
+    dados["Base"] = "Mês"
+    dados["Texto"] = dados["Valor"].map(formatar_moeda)
+    mapa_cores = dict(zip(dados["Grupo"], dados["Cor"]))
+    fig = px.bar(
+        dados,
+        x="Valor",
+        y="Base",
+        color="Grupo",
+        orientation="h",
+        color_discrete_map=mapa_cores,
+        custom_data=["Texto"],
+    )
+    fig.update_traces(
+        marker_line_width=0,
+        hovertemplate="%{fullData.name}<br>%{customdata[0]}<extra></extra>",
+    )
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=25, b=10), mostrar_legenda=True, altura=230)
+    fig.update_layout(barmode="stack")
+    fig.update_xaxes(tickprefix="R$ ", separatethousands=True, showgrid=True)
+    fig.update_yaxes(showticklabels=False, showgrid=False)
+    return fig
+
+
+def grafico_dividas_comparativo(dividas: pd.DataFrame):
+    """Compara saldo em aberto e parcela do mês em um só gráfico."""
+    dados = dividas[["Dívida", "Falta pagar", "Parcela do mês"]].copy()
+    dados["Dívida"] = dados["Dívida"].replace("", "Sem nome")
+    dados = dados.sort_values("Falta pagar", ascending=False).head(8)
+    grafico = dados.melt(id_vars="Dívida", var_name="Indicador", value_name="Valor")
+    grafico = grafico[grafico["Valor"] > 0].copy()
+    grafico["Texto"] = grafico["Valor"].map(formatar_moeda)
+    altura = max(300, min(520, 120 + dados["Dívida"].nunique() * 48))
+    fig = px.bar(
+        grafico,
+        x="Valor",
+        y="Dívida",
+        color="Indicador",
+        orientation="h",
+        barmode="group",
+        color_discrete_map={"Falta pagar": CORES_GRAFICO["dourado"], "Parcela do mês": CORES_GRAFICO["vermelho"]},
+        custom_data=["Texto"],
+    )
+    fig.update_traces(
+        marker_line_width=0,
+        hovertemplate="%{y}<br>%{fullData.name}: %{customdata[0]}<extra></extra>",
+    )
+    limpar_grafico(fig, mostrar_legenda=True, altura=altura)
+    fig.update_xaxes(tickprefix="R$ ", separatethousands=True, showgrid=True)
+    fig.update_yaxes(showgrid=False)
+    return fig
+
+
+def grafico_progresso_metas(metas_calculadas: pd.DataFrame):
+    """Mostra progresso individual das metas sem depender da tabela."""
+    dados = metas_calculadas.copy().head(8)
+    dados["Objetivo visual"] = dados["Objetivo"].replace("", "Meta sem nome")
+    dados["Progresso"] = dados["Progresso"].clip(lower=0, upper=100)
+    dados["Texto"] = dados["Progresso"].map(lambda valor: f"{formatar_decimal(float(valor))}%")
+    dados = dados.iloc[::-1].copy()
+    cores = dados["Situação"].map(
+        {
+            "Concluída": CORES_GRAFICO["verde"],
+            "Cabe": CORES_GRAFICO["azul"],
+            "Ajustar": CORES_GRAFICO["dourado"],
+            "Planejar": CORES_GRAFICO["cinza"],
+        }
+    ).fillna(CORES_GRAFICO["azul"])
+    altura = max(280, min(500, 120 + len(dados) * 42))
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=[100] * len(dados),
+            y=dados["Objetivo visual"],
+            orientation="h",
+            marker_color="rgba(100, 116, 139, .16)",
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=dados["Progresso"],
+            y=dados["Objetivo visual"],
+            orientation="h",
+            text=dados["Texto"],
+            textposition="inside",
+            marker_color=cores,
+            customdata=dados[["Falta", "Guardar por mês", "Situação"]].assign(
+                Falta=dados["Falta"].map(formatar_moeda),
+                **{"Guardar por mês": dados["Guardar por mês"].map(formatar_moeda)},
+            ),
+            hovertemplate="%{y}<br>%{x:.1f}% concluído<br>Falta: %{customdata[0]}<br>Por mês: %{customdata[1]}<br>%{customdata[2]}<extra></extra>",
+            showlegend=False,
+        )
+    )
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=16, b=10), altura=altura)
+    fig.update_layout(barmode="overlay")
+    fig.update_xaxes(range=[0, 100], ticksuffix="%", showgrid=True)
+    fig.update_yaxes(showgrid=False)
+    return fig
+
+
+def grafico_historico_mensal(dados_grafico: pd.DataFrame):
+    """Combina entradas, gastos e saldo em um gráfico anual."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            name="Entradas",
+            x=dados_grafico["Período"],
+            y=dados_grafico["Entradas"],
+            marker_color=CORES_GRAFICO["verde"],
+            customdata=dados_grafico["Entradas"].map(formatar_moeda),
+            hovertemplate="%{x}<br>%{customdata}<extra>Entradas</extra>",
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            name="Gastos",
+            x=dados_grafico["Período"],
+            y=dados_grafico["Total de gastos"],
+            marker_color=CORES_GRAFICO["vermelho"],
+            customdata=dados_grafico["Total de gastos"].map(formatar_moeda),
+            hovertemplate="%{x}<br>%{customdata}<extra>Gastos</extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            name="Saldo",
+            x=dados_grafico["Período"],
+            y=dados_grafico["Sobrou/Faltou"],
+            mode="lines+markers",
+            line=dict(color=CORES_GRAFICO["azul"], width=3),
+            marker=dict(size=7),
+            customdata=dados_grafico["Sobrou/Faltou"].map(formatar_moeda),
+            hovertemplate="%{x}<br>%{customdata}<extra>Saldo</extra>",
+        )
+    )
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=22, b=10), mostrar_legenda=True, altura=390)
+    fig.update_layout(barmode="group", hovermode="x unified")
+    aplicar_eixo_moeda(fig)
+    fig.update_xaxes(tickangle=-35)
     return fig
 
 
@@ -1119,16 +1357,16 @@ def resumir_backup_importado(
 
 def mostrar_resumo_importacao(resumo_importacao: dict[str, object]) -> None:
     """Mostra um resumo amigável do arquivo restaurado."""
-    st.markdown("#### Backup carregado")
+    st.markdown("#### Dados carregados")
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         card("Lançamentos", str(resumo_importacao.get("lancamentos", 0)), "Registros restaurados.", "green")
     with c2:
         card("Dívidas", str(resumo_importacao.get("dividas", 0)), "Parcelas restauradas.", "gold")
     with c3:
-        card("Meta", str(resumo_importacao.get("meta", "Sem meta ativa")), "Configuração importada.", "blue")
+        card("Meta", str(resumo_importacao.get("meta", "Sem meta ativa")), "Meta recuperada.", "blue")
     with c4:
-        card("Período", str(resumo_importacao.get("periodo", "Sem período identificado")), "Datas do arquivo.", "green")
+        card("Período", str(resumo_importacao.get("periodo", "Sem período identificado")), "Datas encontradas.", "green")
 
 
 def agendar_importacao(
@@ -1160,7 +1398,7 @@ def exportar_json(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> bytes:
     dados = {
         "app": DISPLAY_NAME,
         "gerado_em": datetime.now().isoformat(timespec="seconds"),
-        "observacao": "Backup local gerado pelo usuário. O app não mantém armazenamento permanente.",
+        "observacao": "Cópia dos dados gerada pelo usuário. O app mantém uma cópia neste navegador para facilitar a continuidade do uso.",
         "lancamentos": dataframe_para_registros_json(lancamentos),
         "dividas": dataframe_para_registros_json(dividas),
         "metas": dataframe_para_registros_json(metas_atuais()),
@@ -1173,13 +1411,13 @@ def importar_json(conteudo: bytes) -> None:
     """Carrega um backup JSON exportado pelo próprio app."""
     dados = json.loads(conteudo.decode("utf-8"))
     if not isinstance(dados, dict) or ("lancamentos" not in dados and "dividas" not in dados):
-        raise ValueError("Arquivo JSON incompatível com este app.")
+        raise ValueError("Não reconheci esse arquivo salvo.")
 
     agendar_importacao(
         pd.DataFrame(dados.get("lancamentos", [])),
         pd.DataFrame(dados.get("dividas", [])),
         dados.get("configuracoes", {}),
-        "Arquivo JSON carregado. Os dados foram restaurados nesta sessão.",
+        "Dados salvos carregados. Suas informações foram restauradas.",
         pd.DataFrame(dados.get("metas", [])),
     )
 
@@ -1225,7 +1463,7 @@ def importar_excel(conteudo: bytes) -> None:
         planilhas.get("Lancamentos", pd.DataFrame()),
         planilhas.get("Dividas", pd.DataFrame()),
         configuracoes,
-        "Planilha Excel carregada. Os dados foram restaurados nesta sessão.",
+        "Planilha carregada. Suas informações foram restauradas.",
         metas_planilha,
     )
 
@@ -1239,26 +1477,28 @@ def importar_arquivo_local(conteudo: bytes, nome_arquivo: str) -> None:
     if nome.endswith(".xlsx"):
         importar_excel(conteudo)
         return
-    raise ValueError("Use um arquivo JSON ou Excel exportado por este app.")
+    raise ValueError("Use um arquivo salvo anteriormente por este app.")
 
 
 def controle_importacao_local(container, prefixo: str) -> None:
     """Mostra o campo de importação reaproveitado na sidebar e no histórico."""
     arquivo = container.file_uploader(
-        "Selecionar arquivo JSON ou Excel",
+        "Selecionar dados salvos",
         type=["json", "xlsx"],
         key=f"{prefixo}_arquivo_local",
         label_visibility="collapsed",
     )
-    if container.button("Importar arquivo", width="stretch", key=f"{prefixo}_importar_local"):
+    if container.button("Carregar dados", width="stretch", key=f"{prefixo}_importar_local"):
         if arquivo is None:
-            container.warning("Selecione um arquivo JSON ou Excel exportado pelo app.")
+            container.warning("Selecione um arquivo salvo anteriormente pelo app.")
         else:
             try:
                 importar_arquivo_local(arquivo.getvalue(), arquivo.name)
                 rerun_preservando_tela()
-            except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as erro:
-                container.error(f"Não foi possível carregar o arquivo: {erro}")
+            except ValueError as erro:
+                container.error(f"Não foi possível carregar os dados: {erro}")
+            except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+                container.error("Não consegui ler esse arquivo. Tente usar um arquivo salvo pelo próprio app.")
 
 
 def aplicar_importacao_pendente() -> None:
@@ -1276,10 +1516,117 @@ def aplicar_importacao_pendente() -> None:
     st.session_state["metas_editor_versao"] = int(st.session_state.get("metas_editor_versao", 0)) + 1
     st.session_state["mensagem_importacao"] = importacao.get(
         "mensagem",
-        "Arquivo carregado. Os dados foram restaurados nesta sessão.",
+        "Dados carregados. Suas informações foram restauradas.",
     )
     st.session_state["resumo_importacao"] = importacao.get("resumo")
-    st.session_state["mensagem_feedback"] = "Dados restaurados com segurança nesta sessão."
+    st.session_state["mensagem_feedback"] = "Dados restaurados com segurança."
+
+
+def acionar_localstorage(acao: str, request_id: str, payload: dict[str, object] | None = None, chave: str | None = None) -> dict[str, object] | None:
+    """Aciona a ponte JavaScript que lê e grava no localStorage do navegador."""
+    return local_storage_bridge(
+        action=acao,
+        storageKey=LOCAL_STORAGE_KEY,
+        requestId=request_id,
+        payload=payload,
+        key=chave or f"localstorage_{acao}",
+        default=None,
+    )
+
+
+def montar_snapshot_localstorage(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> dict[str, object]:
+    """Monta o estado mínimo do app para sobreviver a F5 e queda de conexão."""
+    return {
+        "schema": LOCAL_STORAGE_SCHEMA,
+        "app": DISPLAY_NAME,
+        "lancamentos": dataframe_para_registros_json(normalizar_lancamentos(lancamentos)),
+        "dividas": dataframe_para_registros_json(normalizar_dividas(dividas)),
+        "metas": dataframe_para_registros_json(metas_atuais()),
+        "configuracoes": {chave: valor_para_json(valor) for chave, valor in obter_configuracoes_backup().items()},
+    }
+
+
+def assinatura_snapshot_localstorage(snapshot: dict[str, object]) -> str:
+    """Gera uma assinatura estável para evitar reruns infinitos ao salvar."""
+    conteudo = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(conteudo.encode("utf-8")).hexdigest()
+
+
+def restaurar_snapshot_localstorage(raw: object) -> None:
+    """Restaura o snapshot salvo no navegador usando a rotina de importação."""
+    dados = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(dados, dict):
+        raise ValueError("dados locais em formato inválido")
+    if not any(chave in dados for chave in ["lancamentos", "dividas", "metas", "configuracoes"]):
+        raise ValueError("dados locais não pertencem a este app")
+    schema = int(dados.get("schema", 1) or 1)
+    if schema > LOCAL_STORAGE_SCHEMA:
+        raise ValueError("dados locais foram criados por uma versão mais nova do app")
+
+    agendar_importacao(
+        pd.DataFrame(dados.get("lancamentos", [])),
+        pd.DataFrame(dados.get("dividas", [])),
+        dados.get("configuracoes", {}),
+        "Dados recuperados automaticamente deste navegador.",
+        pd.DataFrame(dados.get("metas", [])),
+    )
+
+
+def inicializar_armazenamento_local() -> None:
+    """Carrega o localStorage antes de criar widgets, quando a sessão é nova."""
+    if st.session_state.pop("localstorage_limpar_pendente", False):
+        st.session_state["localstorage_pronto"] = True
+        st.session_state["localstorage_limpar_agora"] = True
+        return
+
+    if st.session_state.get("localstorage_pronto"):
+        return
+
+    resposta = acionar_localstorage("load", f"load-{LOCAL_STORAGE_SCHEMA}", chave="localstorage_load")
+    if resposta is None:
+        st.markdown("Recuperando dados salvos neste navegador...")
+        st.stop()
+
+    if not isinstance(resposta, dict):
+        st.session_state["localstorage_pronto"] = True
+        return
+
+    if resposta.get("status") == "error":
+        st.warning("Não foi possível verificar os dados salvos neste navegador.")
+        st.session_state["localstorage_pronto"] = True
+        return
+
+    raw = resposta.get("raw")
+    if raw:
+        try:
+            restaurar_snapshot_localstorage(raw)
+            st.session_state["localstorage_restaurado"] = True
+        except (json.JSONDecodeError, TypeError, ValueError):
+            st.warning("Não foi possível recuperar os dados salvos neste navegador.")
+            st.session_state["localstorage_limpar_agora"] = True
+
+    st.session_state["localstorage_pronto"] = True
+
+
+def sincronizar_armazenamento_local(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> None:
+    """Salva o estado atual no localStorage depois que a tela é calculada."""
+    if not st.session_state.get("localstorage_pronto"):
+        return
+
+    if st.session_state.pop("localstorage_limpar_agora", False):
+        acionar_localstorage(
+            "clear",
+            f"clear-{datetime.now().isoformat(timespec='microseconds')}",
+            chave="localstorage_clear",
+        )
+
+    snapshot = montar_snapshot_localstorage(lancamentos, dividas)
+    assinatura = assinatura_snapshot_localstorage(snapshot)
+    resposta = acionar_localstorage("save", assinatura, payload=snapshot, chave="localstorage_save")
+    if isinstance(resposta, dict) and resposta.get("status") == "error" and resposta.get("requestId") == assinatura:
+        if st.session_state.get("localstorage_erro_salvar") != assinatura:
+            st.warning(f"Não foi possível salvar os dados neste navegador: {resposta.get('message', 'erro desconhecido')}")
+            st.session_state["localstorage_erro_salvar"] = assinatura
 
 
 def calcular_dividas(dividas: pd.DataFrame) -> float:
@@ -1856,7 +2203,6 @@ def tela_inicio() -> None:
             <h1 class="visually-hidden">{DISPLAY_NAME}</h1>
             {logo_html("brand-logo hero-logo")}
             <p>Organize entradas, gastos, parcelas e metas em poucos minutos.</p>
-            <p>As comparações possuem caráter informativo.</p>
             <div class="chip-row">
                 <span class="chip">Registrar</span>
                 <span class="chip">Resultado do mês</span>
@@ -1867,10 +2213,6 @@ def tela_inicio() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.info(
-        "Seus dados não ficam salvos no servidor. Para continuar utilizando depois, exporte sua planilha ou arquivo JSON."
-    )
-    st.caption("Os arquivos exportados ficam armazenados apenas no seu dispositivo.")
     c1, c2 = st.columns(2)
     with c1:
         card("💰 Entradas", "Anote o que entrou", "Salário, benefício, venda, bico ou ajuda recebida.", "green")
@@ -1886,10 +2228,6 @@ def tela_inicio() -> None:
 def aba_lancamentos() -> pd.DataFrame:
     """Cuida do cadastro e edição de entradas e gastos."""
     st.subheader("Registrar")
-    st.markdown(
-        '<p class="note">Adicione entradas e gastos do mês. Use detalhes apenas quando precisar marcar fixos ou parcelas.</p>',
-        unsafe_allow_html=True,
-    )
 
     if "lancamentos_df" not in st.session_state:
         st.session_state["lancamentos_df"] = criar_lancamentos_padrao()
@@ -1979,59 +2317,28 @@ def aba_lancamentos() -> pd.DataFrame:
     with c4:
         card("🛍️ Variáveis", formatar_moeda(gastos["total_variaveis"]), "Compras e gastos que variam.", "blue")
 
-    st.markdown("#### Visualização rápida")
-    col_fluxo, col_composicao = st.columns(2)
-    with col_fluxo:
-        dados_fluxo = pd.DataFrame({"Tipo": ["Entradas", "Gastos"], "Valor": [entradas, total_gastos]})
-        dados_fluxo["Texto"] = dados_fluxo["Valor"].map(formatar_moeda)
-        if dados_fluxo["Valor"].sum() > 0:
-            fig = grafico_barras_verticais(
-                dados_fluxo,
-                "Tipo",
-                mapa_cores={"Entradas": "#2f7d59", "Gastos": "#c45f4b"},
-            )
-            st.plotly_chart(fig, width="stretch")
-        else:
-            st.info("Adicione valores para comparar entradas e gastos.")
-    with col_composicao:
-        dados_composicao = pd.DataFrame(
-            {
-                "Grupo": ["Gastos fixos", "Gastos variáveis"],
-                "Valor": [gastos["total_fixos"], gastos["total_variaveis"]],
-            }
-        )
-        if dados_composicao["Valor"].sum() > 0:
-            fig = grafico_rosca(dados_composicao, "Grupo", cores=["#b7791f", "#2f6f9f"])
-            st.plotly_chart(fig, width="stretch")
-        else:
-            st.info("Marque gastos fixos e variáveis para ver a composição.")
-
-    st.markdown("#### Resumo por categoria")
+    st.markdown("#### Gastos por categoria")
     por_categoria = (
         lancamentos.groupby(["Tipo", "Categoria"], as_index=False)["Valor"].sum().sort_values(["Tipo", "Valor"], ascending=[True, False])
     )
     por_categoria["Categoria"] = por_categoria["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
-    col_tabela, col_grafico = st.columns([1.1, 1])
-    with col_tabela:
+    gastos_categoria = por_categoria[por_categoria["Tipo"] == "Gasto"].copy().head(8)
+    if not gastos_categoria.empty:
+        gastos_categoria["Texto"] = gastos_categoria["Valor"].map(formatar_moeda)
+        fig = grafico_barras_horizontais(gastos_categoria, "Categoria")
+        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        mostrar_grafico(fig)
+
+    with st.expander("Ver resumo por categoria"):
         tabela = por_categoria.copy()
         tabela["Valor"] = tabela["Valor"].map(formatar_moeda)
         st.dataframe(tabela, hide_index=True, width="stretch")
-    with col_grafico:
-        gastos_categoria = por_categoria[por_categoria["Tipo"] == "Gasto"].copy().head(8)
-        if gastos_categoria.empty:
-            st.info("Registre gastos para ver as principais categorias.")
-        else:
-            gastos_categoria["Texto"] = gastos_categoria["Valor"].map(formatar_moeda)
-            fig = grafico_barras_horizontais(gastos_categoria, "Categoria")
-            fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width="stretch")
     return lancamentos
 
 
 def aba_dividas() -> tuple[pd.DataFrame, float]:
     """Cuida das dívidas e parcelas cadastradas separadamente."""
     st.subheader("Dívidas e parcelas")
-    st.markdown('<p class="note">Acompanhe parcelas do mês usando nomes simples, sem dados pessoais.</p>', unsafe_allow_html=True)
 
     if "dividas_df" not in st.session_state:
         st.session_state["dividas_df"] = criar_dividas_padrao()
@@ -2078,34 +2385,11 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
         card("📌 No resultado", formatar_moeda(total), "Peso mensal considerado no mês.", "green" if total == 0 else "red")
 
     if not dividas.empty:
-        st.markdown("#### Visão das dívidas")
-        col_aberto, col_parcela = st.columns(2)
-
-        with col_aberto:
-            dividas_abertas = dividas[["Dívida", "Falta pagar"]].copy()
-            dividas_abertas["Dívida"] = dividas_abertas["Dívida"].replace("", "Sem nome")
-            dividas_abertas = dividas_abertas.rename(columns={"Falta pagar": "Valor"})
-            dividas_abertas = dividas_abertas[dividas_abertas["Valor"] > 0].sort_values("Valor", ascending=False).head(8)
-            if dividas_abertas.empty:
-                st.info("Informe o valor em aberto para ver o peso de cada dívida.")
-            else:
-                dividas_abertas["Texto"] = dividas_abertas["Valor"].map(formatar_moeda)
-                fig = grafico_barras_horizontais(dividas_abertas, "Dívida", ["#c45f4b", "#b7791f", "#2f6f9f", "#2f7d59"])
-                fig.update_layout(yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig, width="stretch")
-
-        with col_parcela:
-            parcelas_mes = dividas[["Dívida", "Parcela do mês"]].copy()
-            parcelas_mes["Dívida"] = parcelas_mes["Dívida"].replace("", "Sem nome")
-            parcelas_mes = parcelas_mes.rename(columns={"Parcela do mês": "Valor"})
-            parcelas_mes = parcelas_mes[parcelas_mes["Valor"] > 0].sort_values("Valor", ascending=False).head(8)
-            if parcelas_mes.empty:
-                st.info("Informe parcelas do mês para comparar os compromissos.")
-            else:
-                parcelas_mes["Texto"] = parcelas_mes["Valor"].map(formatar_moeda)
-                fig = grafico_barras_horizontais(parcelas_mes, "Dívida", ["#2f6f9f", "#b7791f", "#c45f4b", "#2f7d59"])
-                fig.update_layout(yaxis={"categoryorder": "total ascending"})
-                st.plotly_chart(fig, width="stretch")
+        st.markdown("#### Comparativo das dívidas")
+        if float(dividas[["Falta pagar", "Parcela do mês"]].sum().sum()) > 0:
+            fig = grafico_dividas_comparativo(dividas)
+            fig.update_layout(yaxis={"categoryorder": "total ascending"})
+            mostrar_grafico(fig)
     return dividas, total
 
 
@@ -2140,41 +2424,13 @@ def exibir_painel(
     if isinstance(tendencias, pd.DataFrame) and not tendencias.empty:
         panel_html("Tendência", str(tendencias.iloc[0]["Texto"]))
 
-    st.markdown("#### Visual do mês")
-    col_fluxo, col_saida = st.columns(2)
-    with col_fluxo:
-        dados_fluxo = pd.DataFrame(
-            {
-                "Tipo": ["Entrou", "Saiu"],
-                "Valor": [resumo["total_receitas"], resumo["total_geral_gastos"]],
-            }
-        )
-        dados_fluxo["Texto"] = dados_fluxo["Valor"].map(formatar_moeda)
-        if dados_fluxo["Valor"].sum() == 0:
-            st.info("Registre entradas e gastos para comparar o mês.")
-        else:
-            fig = grafico_barras_verticais(
-                dados_fluxo,
-                "Tipo",
-                mapa_cores={"Entrou": "#2f7d59", "Saiu": "#c45f4b"},
-            )
-            st.plotly_chart(fig, width="stretch")
-    with col_saida:
-        dados_saida = pd.DataFrame(
-            {
-                "Grupo": ["Fixos", "Variáveis", "Parcelas"],
-                "Valor": [resumo["total_fixos"], resumo["total_variaveis"], resumo["total_dividas"]],
-            }
-        )
-        if dados_saida["Valor"].sum() == 0:
-            st.info("Adicione gastos para ver a composição da saída.")
-        else:
-            fig = grafico_rosca(dados_saida, "Grupo", cores=["#b7791f", "#2f6f9f", "#c45f4b"])
-            st.plotly_chart(fig, width="stretch")
+    st.markdown("#### Mapa do mês")
+    if resumo["total_receitas"] != 0 or resumo["total_geral_gastos"] != 0:
+        mostrar_grafico(grafico_destino_do_mes(resumo))
 
     dividas_backup = dividas if dividas is not None else pd.DataFrame(columns=COLUNAS_DIVIDAS)
     st.download_button(
-        "💾 Salvar backup JSON",
+        "💾 Salvar meus dados",
         data=exportar_json(lancamentos, dividas_backup),
         file_name=nome_arquivo_exportacao("json"),
         mime=MIME_JSON,
@@ -2182,7 +2438,7 @@ def exibir_painel(
         type="primary",
         key="resultado_backup_json",
         on_click=registrar_feedback,
-        args=("Backup JSON pronto para salvar no dispositivo.",),
+        args=("Seus dados estão prontos para salvar.",),
     )
 
     with st.expander("Ver mais"):
@@ -2199,7 +2455,7 @@ def exibir_painel(
             elif item["tipo"] == "sucesso":
                 st.success(texto)
             else:
-                st.info(texto)
+                panel_html(item["titulo"], f"{item['texto']} Ação: {item['acao']}")
 
         if isinstance(tendencias, pd.DataFrame) and not tendencias.empty:
             st.markdown("#### Comparação com mês anterior")
@@ -2213,15 +2469,13 @@ def exibir_painel(
         with col_grafico:
             st.markdown("#### Categorias que mais pesaram")
             gastos = lancamentos[lancamentos["Tipo"] == "Gasto"] if not lancamentos.empty else pd.DataFrame()
-            if gastos.empty:
-                st.info("Registre gastos para ver o gráfico.")
-            else:
+            if not gastos.empty:
                 dados = gastos.groupby("Categoria", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
                 dados["Categoria"] = dados["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
                 dados["Texto"] = dados["Valor"].map(formatar_moeda)
                 fig = grafico_barras_horizontais(dados, "Categoria")
                 fig.update_layout(yaxis={"categoryorder": "total ascending"}, margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(fig, width="stretch")
+                mostrar_grafico(fig)
         with col_sugestoes:
             st.markdown("#### Sugestões rápidas")
             for sugestao in sugestoes[:4]:
@@ -2230,7 +2484,6 @@ def exibir_painel(
 def aba_metas(saldo: float) -> dict[str, object]:
     """Permite acompanhar várias metas de dinheiro guardado."""
     st.subheader("Metas para guardar dinheiro")
-    st.markdown('<p class="note">Cadastre objetivos diferentes, acompanhe o progresso e escolha qual meta fica em foco na simulação.</p>', unsafe_allow_html=True)
 
     if "metas_editor_versao" not in st.session_state:
         st.session_state["metas_editor_versao"] = 0
@@ -2287,6 +2540,9 @@ def aba_metas(saldo: float) -> dict[str, object]:
     else:
         st.success("As metas cabem na sobra do mês considerando os prazos informados.")
 
+    st.markdown("#### Progresso das metas")
+    mostrar_grafico(grafico_progresso_metas(metas_calculadas))
+
     st.markdown("#### Meta em foco")
     opcoes = list(metas_calculadas.index)
     indice_atual = indice_meta_foco(metas_calculadas) or 0
@@ -2314,36 +2570,23 @@ def aba_metas(saldo: float) -> dict[str, object]:
         card("Situação", str(linha["Situação"]), f"{formatar_decimal(float(linha['Progresso']))}% concluída.", "green" if linha["Situação"] in ["Cabe", "Concluída"] else "gold")
 
     if linha["Situação"] == "Ajustar" and int(linha["Prazo sugerido"]) > int(linha["Prazo (meses)"]):
-        st.info(f"Com a sobra atual, essa meta fica mais realista em cerca de {int(linha['Prazo sugerido'])} meses.")
+        panel_html("Prazo sugerido", f"Com a sobra atual, essa meta fica mais realista em cerca de {int(linha['Prazo sugerido'])} meses.")
 
-    st.markdown("#### Visual da meta em foco")
-    col_comparacao, col_evolucao = st.columns([1, 1.25])
-    with col_comparacao:
-        dados_comparacao = pd.DataFrame(
-            {
-                "Referência": ["Guardar por mês", "Sobra do mês", "Todas as metas"],
-                "Valor": [float(linha["Guardar por mês"]), max(float(saldo), 0.0), mensal_total],
-            }
-        )
-        dados_comparacao["Texto"] = dados_comparacao["Valor"].map(formatar_moeda)
-        fig = grafico_barras_horizontais(dados_comparacao, "Referência", ["#2f7d59", "#2f6f9f", "#b7791f"])
-        fig.update_layout(yaxis={"categoryorder": "total ascending"})
-        st.plotly_chart(fig, width="stretch")
-    with col_evolucao:
-        prazo = int(linha["Prazo (meses)"])
-        mensal = float(linha["Guardar por mês"])
-        valor_total = float(linha["Valor total"])
-        valor_guardado = float(linha["Já guardado"])
-        dados_evolucao = pd.DataFrame(
-            {
-                "Mês": list(range(0, prazo + 1)),
-                "Dinheiro guardado": [min(valor_guardado + mensal * mes, valor_total) for mes in range(0, prazo + 1)],
-            }
-        )
-        fig = grafico_linha_moeda(dados_evolucao, "Mês", "Dinheiro guardado")
-        if valor_total > 0:
-            fig.add_hline(y=valor_total, line_dash="dash", line_color="#b7791f")
-        st.plotly_chart(fig, width="stretch")
+    st.markdown("#### Caminho da meta em foco")
+    prazo = int(linha["Prazo (meses)"])
+    mensal = float(linha["Guardar por mês"])
+    valor_total = float(linha["Valor total"])
+    valor_guardado = float(linha["Já guardado"])
+    dados_evolucao = pd.DataFrame(
+        {
+            "Mês": list(range(0, prazo + 1)),
+            "Dinheiro guardado": [min(valor_guardado + mensal * mes, valor_total) for mes in range(0, prazo + 1)],
+        }
+    )
+    fig = grafico_linha_moeda(dados_evolucao, "Mês", "Dinheiro guardado")
+    if valor_total > 0:
+        fig.add_hline(y=valor_total, line_dash="dash", line_color=CORES_GRAFICO["dourado"])
+    mostrar_grafico(fig)
 
     with st.expander("Ver todas as metas calculadas"):
         st.dataframe(formatar_tabela_metas(metas_calculadas), hide_index=True, width="stretch")
@@ -2354,12 +2597,10 @@ def aba_metas(saldo: float) -> dict[str, object]:
 def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
     """Mostra a simulação de dinheiro guardado ao longo do tempo."""
     st.subheader("Guardando dinheiro")
-    st.markdown('<p class="note">Compare caminhos simples para visualizar a diferença de guardar todo mês.</p>', unsafe_allow_html=True)
-    st.info("As comparações possuem caráter informativo.")
 
     taxas = obter_taxas_bcb()
     if not taxas["ok"]:
-        st.caption("Usando uma referência padrão porque não foi possível atualizar os valores agora.")
+        st.warning("Referências atuais indisponíveis; usando valores padrão.")
 
     referencia_aa = float(taxas["selic_aa"])
     tr_mensal = float(taxas["tr_mensal"])
@@ -2404,13 +2645,14 @@ def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
         st.success(f"A diferença estimada entre deixar parado e aplicar de forma simples é de {formatar_moeda(diferenca)} no período.")
 
     if not tabela.empty:
-        st.markdown("#### Evolução dos cenários")
+        st.markdown("#### Evolução comparada")
         evolucao = tabela.melt(
             id_vars="Mês",
             value_vars=["Dinheiro parado", "Poupança", "Aplicação simples"],
             var_name="Cenário",
             value_name="Valor",
         )
+        evolucao["Texto"] = evolucao["Valor"].map(formatar_moeda)
         fig = px.line(
             evolucao,
             x="Mês",
@@ -2418,25 +2660,17 @@ def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
             color="Cenário",
             markers=True,
             color_discrete_map={
-                "Dinheiro parado": "#2f7d59",
-                "Poupança": "#2f6f9f",
-                "Aplicação simples": "#b7791f",
+                "Dinheiro parado": CORES_GRAFICO["verde"],
+                "Poupança": CORES_GRAFICO["azul"],
+                "Aplicação simples": CORES_GRAFICO["dourado"],
             },
+            custom_data=["Texto"],
         )
-        limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
+        fig.update_traces(line=dict(width=3), marker=dict(size=6), hovertemplate="Mês %{x}<br>%{customdata[0]}<extra>%{fullData.name}</extra>")
+        limpar_grafico(fig, margem=dict(l=10, r=10, t=22, b=10), mostrar_legenda=True, altura=380)
+        fig.update_layout(hovermode="x unified")
         aplicar_eixo_moeda(fig)
-        st.plotly_chart(fig, width="stretch")
-
-    st.markdown("#### Comparação final")
-    dados = pd.DataFrame(
-        {
-            "Cenário": ["Dinheiro parado", "Poupança", "Aplicação simples"],
-            "Valor": [final["Dinheiro parado"], final["Poupança"], final["Aplicação simples"]],
-        }
-    )
-    dados["Texto"] = dados["Valor"].map(formatar_moeda)
-    fig = grafico_barras_horizontais(dados, "Cenário", ["#2f7d59", "#2f6f9f", "#b7791f"])
-    st.plotly_chart(fig, width="stretch")
+        mostrar_grafico(fig)
 
     with st.expander("Ver evolução mês a mês"):
         st.dataframe(formatar_tabela_simulacao(tabela), hide_index=True, width="stretch")
@@ -2586,16 +2820,16 @@ def exportar_pdf_resumo(
 ) -> bytes:
     """Gera um PDF visual de uma página com o resumo essencial."""
     comandos: list[str] = []
-    comandos.append(comando_retangulo_pdf(0, 0, 595, 842, (0.96, 0.97, 0.95)))
+    comandos.append(comando_retangulo_pdf(0, 0, 595, 842, (0.96, 0.97, 0.98)))
     comandos.append(comando_retangulo_pdf(36, 730, 523, 74, (1.00, 1.00, 1.00)))
     comandos.append(comando_texto_pdf(DISPLAY_NAME, 50, 780, 17))
     comandos.append(comando_texto_pdf(f"Resumo gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}", 50, 758, 10))
-    comandos.append(comando_texto_pdf("Dados armazenados apenas na sessão e nos arquivos salvos pelo usuário.", 50, 742, 9))
+    comandos.append(comando_texto_pdf("Dados armazenados no navegador e nos arquivos salvos pelo usuário.", 50, 742, 9))
 
     valores = [
-        ("Entrou", float(resumo["total_receitas"]), (0.18, 0.49, 0.35)),
-        ("Saiu", float(resumo["total_geral_gastos"]), (0.77, 0.37, 0.29)),
-        ("Resultado", float(resumo["saldo_final"]), (0.18, 0.44, 0.62) if resumo["saldo_final"] >= 0 else (0.72, 0.47, 0.12)),
+        ("Entrou", float(resumo["total_receitas"]), (0.06, 0.62, 0.43)),
+        ("Saiu", float(resumo["total_geral_gastos"]), (0.90, 0.28, 0.30)),
+        ("Resultado", float(resumo["saldo_final"]), (0.15, 0.39, 0.92) if resumo["saldo_final"] >= 0 else (0.85, 0.47, 0.02)),
     ]
     maior = max(max(abs(valor) for _, valor, _ in valores), 1.0)
     y_barra = 690
@@ -2603,7 +2837,7 @@ def exportar_pdf_resumo(
     for rotulo, valor, cor in valores:
         largura = int((abs(valor) / maior) * 290)
         comandos.append(comando_texto_pdf(rotulo, 50, y_barra + 3, 10))
-        comandos.append(comando_retangulo_pdf(130, y_barra, 300, 14, (0.88, 0.91, 0.88)))
+        comandos.append(comando_retangulo_pdf(130, y_barra, 300, 14, (0.85, 0.89, 0.93)))
         comandos.append(comando_retangulo_pdf(130, y_barra, max(largura, 4), 14, cor))
         comandos.append(comando_texto_pdf(formatar_moeda(valor), 445, y_barra + 3, 10))
         y_barra -= 32
@@ -2723,14 +2957,14 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
     c1, c2, c3 = st.columns(3)
     with c1:
         st.download_button(
-            "Baixar Excel",
+            "Baixar planilha",
             data=exportar_excel(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes),
             file_name=nome_arquivo_exportacao("xlsx"),
             mime=MIME_EXCEL,
             width="stretch",
             key="historico_exportar_excel",
             on_click=registrar_feedback,
-            args=("Planilha Excel pronta para salvar.",),
+            args=("Planilha pronta para salvar.",),
         )
     with c2:
         st.download_button(
@@ -2745,7 +2979,7 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         )
     with c3:
         st.download_button(
-            "💾 Salvar backup JSON",
+            "💾 Salvar meus dados",
             data=exportar_json(lancamentos, dividas),
             file_name=nome_arquivo_exportacao("json"),
             mime=MIME_JSON,
@@ -2753,11 +2987,10 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
             type="primary",
             key="historico_backup_json",
             on_click=registrar_feedback,
-            args=("Backup JSON pronto para salvar no dispositivo.",),
+            args=("Seus dados estão prontos para salvar.",),
         )
 
-    with st.expander("Importar arquivo salvo no dispositivo"):
-        st.markdown('<p class="note">Use apenas arquivos JSON ou Excel exportados por este app.</p>', unsafe_allow_html=True)
+    with st.expander("Carregar dados salvos"):
         controle_importacao_local(st, "historico")
 
     st.markdown("#### Resumo mensal")
@@ -2789,7 +3022,7 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
     padrao = [ano for ano in [date.today().year] if ano in opcoes_anos] or opcoes_anos[:1]
     anos = st.multiselect("Anos", options=opcoes_anos, default=padrao)
     if not anos:
-        st.info("Selecione pelo menos um ano.")
+        st.warning("Selecione pelo menos um ano.")
         return
 
     historico_anual = gerar_relatorio_anual(lancamentos, anos)
@@ -2802,7 +3035,7 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         card("💰 Saldo no período", formatar_moeda(float(totais_ano["Sobrou/Faltou"].sum())), "Entradas menos gastos.", "green")
 
     st.download_button(
-        "Baixar histórico anual em Excel",
+        "Baixar histórico anual",
         data=exportar_relatorio_anual_excel(historico_anual),
         file_name=nome_arquivo_exportacao("xlsx", "historico-financeiro", incluir_hora=True),
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2814,57 +3047,8 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
 
     dados_grafico = historico_anual["mensal"].copy()
     dados_grafico["Período"] = dados_grafico["Mês"].astype(str) + "/" + dados_grafico["Ano"].astype(str)
-    col_saldo, col_movimento = st.columns(2)
-    with col_saldo:
-        st.markdown("#### Saldo mês a mês")
-        fig = grafico_linha_moeda(dados_grafico, "Período", "Sobrou/Faltou")
-        st.plotly_chart(fig, width="stretch")
-    with col_movimento:
-        st.markdown("#### Entradas x gastos")
-        movimento = dados_grafico.melt(
-            id_vars="Período",
-            value_vars=["Entradas", "Total de gastos"],
-            var_name="Tipo",
-            value_name="Valor",
-        )
-        movimento["Texto"] = movimento["Valor"].map(formatar_moeda)
-        fig = px.bar(
-            movimento,
-            x="Período",
-            y="Valor",
-            color="Tipo",
-            text="Texto",
-            barmode="group",
-            color_discrete_map={"Entradas": "#2f7d59", "Total de gastos": "#c45f4b"},
-        )
-        fig.update_traces(textposition="outside", cliponaxis=False)
-        limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
-        aplicar_eixo_moeda(fig)
-        fig.update_xaxes(tickangle=-35)
-        st.plotly_chart(fig, width="stretch")
-
-    if len(totais_ano) > 1:
-        st.markdown("#### Total por ano")
-        totais_grafico = totais_ano.melt(
-            id_vars="Ano",
-            value_vars=["Entradas", "Total de gastos", "Sobrou/Faltou"],
-            var_name="Indicador",
-            value_name="Valor",
-        )
-        totais_grafico["Texto"] = totais_grafico["Valor"].map(formatar_moeda)
-        fig = px.bar(
-            totais_grafico,
-            x="Ano",
-            y="Valor",
-            color="Indicador",
-            text="Texto",
-            barmode="group",
-            color_discrete_map={"Entradas": "#2f7d59", "Total de gastos": "#c45f4b", "Sobrou/Faltou": "#2f6f9f"},
-        )
-        fig.update_traces(textposition="outside", cliponaxis=False)
-        limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
-        aplicar_eixo_moeda(fig)
-        st.plotly_chart(fig, width="stretch")
+    st.markdown("#### Evolução do período")
+    mostrar_grafico(grafico_historico_mensal(dados_grafico))
 
     with st.expander("Resumo mês a mês"):
         tabela_mensal = historico_anual["mensal"].drop(columns=["Mês nº"])
@@ -2881,20 +3065,20 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
             categorias_grafico["Texto"] = categorias_grafico["Valor"].map(formatar_moeda)
             fig = grafico_barras_horizontais(categorias_grafico, "Categoria")
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width="stretch")
+            mostrar_grafico(fig)
 
     with st.expander("Compras parceladas"):
         parceladas = historico_anual["parceladas"]
         if parceladas.empty:
-            st.info("Nenhuma compra parcelada encontrada nos anos selecionados.")
+            empty_state("Sem compras parceladas", "Nenhuma compra parcelada encontrada nos anos selecionados.")
         else:
             parceladas_grafico = parceladas.copy()
             parceladas_grafico["Item"] = parceladas_grafico["Descrição"].replace("", pd.NA).fillna(parceladas_grafico["Categoria"]).astype(str)
             parceladas_grafico = parceladas_grafico.groupby("Item", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
             parceladas_grafico["Texto"] = parceladas_grafico["Valor"].map(formatar_moeda)
-            fig = grafico_barras_horizontais(parceladas_grafico, "Item", ["#b7791f", "#2f6f9f", "#c45f4b", "#2f7d59"])
+            fig = grafico_barras_horizontais(parceladas_grafico, "Item", [CORES_GRAFICO["dourado"], CORES_GRAFICO["azul"], CORES_GRAFICO["vermelho"], CORES_GRAFICO["verde"]])
             fig.update_layout(yaxis={"categoryorder": "total ascending"})
-            st.plotly_chart(fig, width="stretch")
+            mostrar_grafico(fig)
             tabela_parceladas = parceladas.copy()
             tabela_parceladas["Valor"] = tabela_parceladas["Valor"].map(formatar_moeda)
             st.dataframe(tabela_parceladas, hide_index=True, width="stretch")
@@ -2903,7 +3087,6 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
 def tela_privacidade() -> None:
     """Mostra a política de privacidade e LGPD dentro do app."""
     st.subheader("Política de Privacidade e LGPD")
-    st.caption("Organização Financeira na Prática - última atualização: Maio de 2026")
 
     st.markdown(
         """
@@ -2919,23 +3102,23 @@ O aplicativo não solicita CPF, RG, senha, dados bancários, cartão de crédito
 
 As informações inseridas pelo usuário são preenchidas voluntariamente apenas para uso pessoal dentro da ferramenta.
 
-### 3. Uso no Streamlit Cloud
+### 3. Uso na versão publicada
 
-Na versão publicada no Streamlit Cloud, os dados digitados são processados temporariamente na sessão do aplicativo para que a interface funcione. O projeto não usa banco de dados, login, armazenamento permanente em servidor, publicidade ou ferramentas próprias de rastreamento.
+Na versão publicada na internet, os dados digitados são usados apenas para mostrar os resultados na tela. Uma cópia automática pode ficar no próprio navegador para ajudar a recuperar o preenchimento após atualizar a página ou perder a conexão.
 
-Ao encerrar ou reiniciar a sessão, as informações preenchidas podem ser perdidas. Para guardar os dados, o usuário deve baixar os arquivos Excel ou JSON e salvá-los no próprio dispositivo.
+O aplicativo não exige cadastro, senha, anúncios ou conexão com banco, cartão ou conta financeira. Ao limpar os dados no aplicativo, a cópia do navegador também é removida. Para guardar as informações fora do navegador, o usuário pode baixar uma cópia e salvá-la no próprio dispositivo.
 
 ### 4. Armazenamento das informações
 
-O aplicativo não realiza armazenamento permanente de dados financeiros em servidores externos do projeto.
+O aplicativo não guarda permanentemente os dados financeiros em uma área própria na internet.
 
-Os dados preenchidos permanecem apenas durante a sessão de uso, não são vendidos, não são utilizados para fins comerciais e não são compartilhados voluntariamente com terceiros pelo responsável do projeto.
+As informações preenchidas ficam durante o uso e, quando houver recuperação automática, em uma cópia no próprio navegador. Elas não são vendidas, não são usadas para fins comerciais e não são compartilhadas voluntariamente com terceiros pelo responsável do projeto.
 
 ### 5. Controle local dos dados
 
-Os arquivos exportados pelo aplicativo são armazenados exclusivamente no computador ou dispositivo pessoal escolhido pelo usuário.
+Os arquivos baixados pelo aplicativo e a cópia automática do navegador ficam no computador, celular, tablet ou navegador escolhido pelo usuário.
 
-O aplicativo não possui acesso posterior aos arquivos salvos localmente. O usuário pode baixar um backup em JSON ou uma planilha Excel para carregar novamente no próprio app em outro momento.
+O aplicativo não acessa depois os arquivos que o usuário salvou fora do navegador. O usuário pode baixar uma cópia dos dados ou uma planilha para continuar usando o app em outro momento.
 
 ### 6. Segurança
 
@@ -2973,7 +3156,6 @@ Em caso de dúvidas relacionadas ao funcionamento do aplicativo ou privacidade d
 def barra_lateral(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
     """Monta os botões fixos da barra lateral."""
     logo_barra_lateral()
-    st.sidebar.caption("Controle simples do mês.")
     st.sidebar.divider()
     if st.sidebar.button("Novo lançamento", width="stretch"):
         if "lancamentos_df" not in st.session_state:
@@ -2991,17 +3173,17 @@ def barra_lateral(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         tela_atual = st.session_state.get("aba_atual", "Início")
         st.session_state.clear()
         st.session_state["aba_atual"] = tela_atual if tela_atual in ABAS_APP else "Início"
+        st.session_state["localstorage_limpar_pendente"] = True
         st.session_state["mensagem_feedback"] = "Dados limpos."
         rerun_preservando_tela()
-    if st.sidebar.button("Atualizar referências", width="stretch"):
+    if st.sidebar.button("Atualizar taxas", width="stretch"):
         st.cache_data.clear()
-        st.session_state["mensagem_feedback"] = "Referências atualizadas."
+        st.session_state["mensagem_feedback"] = "Taxas atualizadas."
         rerun_preservando_tela()
     st.sidebar.divider()
     st.sidebar.subheader("Salvar dados")
-    backup_hint("Salve um backup JSON sempre que terminar uma atualização importante.")
     st.sidebar.download_button(
-        "💾 Salvar backup JSON",
+        "💾 Salvar meus dados",
         data=exportar_json(lancamentos, dividas),
         file_name=nome_arquivo_exportacao("json"),
         mime=MIME_JSON,
@@ -3009,28 +3191,26 @@ def barra_lateral(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         type="primary",
         key="sidebar_backup_json",
         on_click=registrar_feedback,
-        args=("Backup JSON pronto para salvar no dispositivo.",),
+        args=("Seus dados estão prontos para salvar.",),
     )
     st.sidebar.download_button(
-        "Exportar Excel",
+        "Baixar planilha",
         data=exportar_excel(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes),
         file_name=nome_arquivo_exportacao("xlsx"),
         mime=MIME_EXCEL,
         width="stretch",
         key="sidebar_exportar_excel",
         on_click=registrar_feedback,
-        args=("Planilha Excel pronta para salvar.",),
+        args=("Planilha pronta para salvar.",),
     )
-    with st.sidebar.expander("Importar arquivo"):
-        st.caption("Carregue JSON ou Excel salvo no seu dispositivo.")
+    with st.sidebar.expander("Carregar dados salvos"):
         controle_importacao_local(st, "sidebar")
-    st.sidebar.caption("Os arquivos exportados ficam armazenados apenas no seu dispositivo.")
-    st.sidebar.caption("As comparações possuem caráter informativo.")
 
 
 def main() -> None:
     """Executa o app e organiza as abas principais."""
     configurar_pagina()
+    inicializar_armazenamento_local()
     aplicar_importacao_pendente()
     aplicar_exemplo_pendente()
     mensagem_importacao = st.session_state.pop("mensagem_importacao", None)
@@ -3085,6 +3265,7 @@ def main() -> None:
         tela_privacidade()
 
     barra_lateral(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes)
+    sincronizar_armazenamento_local(lancamentos, dividas)
 
     rodape_institucional()
 
