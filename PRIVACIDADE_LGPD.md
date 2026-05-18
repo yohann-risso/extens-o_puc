@@ -49,7 +49,6 @@ Os dados preenchidos:
 Os arquivos exportados pelo aplicativo são armazenados exclusivamente:
 
 - no computador;
-- no celular;
 - no dispositivo pessoal escolhido pelo usuário.
 
 O aplicativo não possui acesso posterior aos arquivos salvos localmente.

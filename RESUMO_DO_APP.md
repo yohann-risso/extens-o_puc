@@ -69,7 +69,7 @@ O app gera:
 
 O app não usa login nem banco de dados. No Streamlit Cloud, as informações digitadas ficam na sessão de uso e não são armazenadas permanentemente pelo projeto.
 
-Para continuar depois, o usuário deve baixar Excel ou JSON e salvar o arquivo no próprio computador, celular ou dispositivo pessoal. O JSON pode ser carregado novamente no app.
+Para continuar depois, o usuário deve baixar Excel ou JSON e salvar o arquivo no próprio computador ou dispositivo pessoal. O JSON pode ser carregado novamente no app.
 
 ## Observação
 

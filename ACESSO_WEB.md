@@ -1,28 +1,18 @@
-# Como acessar pelo celular ou pela web
+# Como acessar pela web
 
-## Opção 1: acessar pelo celular na mesma rede Wi-Fi
+## Opção 1: executar no computador
 
 Essa é a forma mais simples para usar em sala, oficina, laboratório ou empresa.
 
 1. No computador onde o app está salvo, dê dois cliques no arquivo `executar_app.bat`.
 2. Aguarde a instalação das dependências e a abertura do Streamlit.
-3. O terminal vai mostrar dois endereços:
-   - `http://localhost:8501` para abrir no próprio computador.
-   - `http://SEU-IP:8501` para abrir no celular.
-4. No celular, conecte-se ao mesmo Wi-Fi do computador.
-5. Abra o navegador do celular e digite o endereço com o IP mostrado.
-
-Exemplo:
+3. Abra o navegador no próprio computador em:
 
 ```text
-http://192.168.0.10:8501
+http://localhost:8501
 ```
 
-Se o celular não abrir, verifique:
-
-- computador e celular estão no mesmo Wi-Fi;
-- o firewall do Windows permitiu o acesso do Python/Streamlit;
-- o terminal do app continua aberto.
+Para encerrar o app, feche a janela do terminal ou pressione `CTRL+C`.
 
 ## Opção 2: publicar como página web
 
@@ -42,7 +32,7 @@ Passos gerais:
 6. Informar que o arquivo principal é `app.py`.
 7. Publicar.
 
-Depois da publicação, o Streamlit gera um link web que pode ser aberto no computador ou no celular.
+Depois da publicação, o Streamlit gera um link web para acesso pelo navegador.
 
 ### Dados do usuário no Streamlit Cloud
 
@@ -52,7 +42,7 @@ Para guardar as informações, o usuário deve:
 
 1. Abrir a aba **Histórico**.
 2. Baixar o arquivo Excel ou JSON.
-3. Salvar o arquivo no próprio computador, celular ou dispositivo pessoal.
+3. Salvar o arquivo no próprio computador ou dispositivo pessoal.
 4. Se quiser continuar depois, carregar novamente o JSON salvo no app.
 
 ## Opção 3: arquivo instalável

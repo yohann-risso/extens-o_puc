@@ -295,11 +295,6 @@ def configurar_pagina() -> None:
             border-radius: 999px;
             padding: .45rem .8rem;
         }
-        @media (max-width: 760px) {
-            .main .block-container { padding-left: .85rem; padding-right: .85rem; }
-            .hero { padding: 1rem; }
-            .metric-card { min-height: auto; }
-        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1843,7 +1838,7 @@ Os dados preenchidos permanecem apenas durante a sessão de uso, não são vendi
 
 ### 5. Controle local dos dados
 
-Os arquivos exportados pelo aplicativo são armazenados exclusivamente no computador, celular ou dispositivo pessoal escolhido pelo usuário.
+Os arquivos exportados pelo aplicativo são armazenados exclusivamente no computador ou dispositivo pessoal escolhido pelo usuário.
 
 O aplicativo não possui acesso posterior aos arquivos salvos localmente. O usuário pode baixar um backup em JSON ou uma planilha Excel para carregar novamente no próprio app em outro momento.
 

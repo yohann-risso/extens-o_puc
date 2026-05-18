@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
 cd /d "%~dp0"
 
@@ -27,28 +27,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-set "LOCAL_IP="
-for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr /C:"IPv4"') do (
-    if not defined LOCAL_IP (
-        set "LOCAL_IP=%%A"
-        set "LOCAL_IP=!LOCAL_IP: =!"
-    )
-)
-
 echo.
 echo App iniciado.
 echo.
 echo No computador, acesse:
 echo http://localhost:8501
 echo.
-if defined LOCAL_IP (
-    echo No celular, conectado ao mesmo Wi-Fi, acesse:
-    echo http://!LOCAL_IP!:8501
-    echo.
-)
 echo Para encerrar, feche esta janela ou pressione CTRL+C.
 echo.
 
-python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+python -m streamlit run app.py --server.address localhost --server.port 8501
 
 pause
