@@ -104,6 +104,6 @@ Esta Política de Privacidade poderá ser atualizada futuramente para melhorias 
 
 Em caso de dúvidas relacionadas ao funcionamento do aplicativo ou privacidade das informações, o usuário poderá entrar em contato com o responsável pelo projeto.
 
-**Responsável:** Yohann da Rocha Risso  
-**Projeto:** Organização Financeira na Prática  
-**Instituição:** PUC Minas - Ciências Econômicas EaD
+- **Responsável:** Yohann da Rocha Risso
+- **Projeto:** Organização Financeira na Prática
+- **Instituição:** PUC Minas - Ciências Econômicas EaD

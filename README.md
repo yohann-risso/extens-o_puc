@@ -1,43 +1,82 @@
 # Organização Financeira na Prática
 
-Aplicativo feito em Python com Streamlit para organizar entradas, gastos, dívidas, metas e histórico financeiro. A proposta é ser uma ferramenta simples para visualizar o orçamento do mês, sem transformar o projeto em um sistema financeiro complexo.
+Aplicativo em Python com Streamlit para organizar entradas, gastos, dívidas, metas e histórico financeiro de forma simples, local e educativa.
 
-## O que dá para fazer
+O projeto foi pensado para uso cotidiano, sem login, banco de dados ou coleta de informações sensíveis. No Streamlit Cloud, os dados ficam apenas na sessão temporária; para continuar depois, o usuário baixa um backup JSON ou uma planilha Excel no próprio dispositivo.
 
-- Registrar entradas e gastos do mês.
-- Separar gastos fixos e variáveis.
-- Marcar compras parceladas.
-- Acompanhar dívidas e parcelas.
-- Ver se o mês fechou com sobra ou falta.
-- Criar uma meta e calcular quanto guardar por mês.
-- Simular dinheiro parado, poupança e uma aplicação simples.
-- Gerar histórico anual, exportar Excel/PDF/JSON e importar backups locais em Excel ou JSON.
-- Consultar a Política de Privacidade e LGPD dentro do próprio app.
+## Screenshots
 
-## Estrutura do código
+![Tela inicial](docs/screenshots/inicio.png)
 
-O arquivo principal é o `app.py`. Ele foi deixado em um único arquivo porque o projeto é pequeno, mas está separado por funções:
+![Resultado do mês](docs/screenshots/resultado-mes.png)
 
-- constantes e categorias usadas no app;
-- funções de formatação de moeda, data, tabelas e gráficos;
-- funções de limpeza dos dados digitados;
-- cálculos de receitas, gastos, dívidas, metas e simulação;
-- exportação para Excel, PDF e JSON;
-- telas do Streamlit.
+## Funcionalidades
 
-As funções possuem docstrings curtas para explicar a finalidade de cada parte. Nos trechos menos diretos, como repetição de gastos fixos no histórico e geração manual do PDF, também existem comentários no próprio código.
+- Registro de entradas e gastos do mês.
+- Separação entre gastos fixos, variáveis e compras parceladas.
+- Painel simples com entrou, saiu, sobrou/faltou e principal categoria.
+- Insight contextual do mês e comparação com o mês anterior por categoria.
+- Cadastro de dívidas com total restante, parcelas do mês e parcelas restantes.
+- Meta para guardar dinheiro e simulação de evolução mensal.
+- Histórico anual com resumo mês a mês e categorias principais.
+- Exportação em Excel, PDF visual e JSON.
+- Importação de backup JSON ou Excel exportado pelo próprio app.
+- Política de Privacidade e LGPD dentro do aplicativo.
 
-## Instalação
+## Tecnologias
 
-Abra o terminal na pasta do projeto e execute:
+- Python
+- Streamlit
+- Pandas
+- Plotly
+- OpenPyXL
+
+## Arquitetura
+
+O app fica concentrado em `app.py` porque o projeto é pequeno e acadêmico, mas o código é separado por funções:
+
+- normalização de lançamentos, dívidas e configurações;
+- cálculo de receitas, gastos, saldo, metas e simulações;
+- geração de histórico anual;
+- exportação e importação local;
+- telas do Streamlit;
+- componentes visuais reutilizáveis.
+
+Modelo de funcionamento:
+
+```text
+Usuário -> Streamlit Cloud -> Sessão temporária -> Backup local do usuário
+```
+
+Não há autenticação, banco de dados, armazenamento permanente em servidor ou integração com serviços financeiros.
+
+## Privacidade e LGPD
+
+O aplicativo não solicita CPF, senha, dados bancários, cartão de crédito ou documentos pessoais.
+
+As informações digitadas são usadas apenas durante a sessão para calcular e exibir os resultados. Os arquivos exportados ficam exclusivamente no dispositivo escolhido pelo usuário.
+
+A política completa está em `PRIVACIDADE_LGPD.md` e também na aba **Privacidade e LGPD** do app.
+
+## Exportação e importação
+
+O usuário pode baixar:
+
+- `controle-financeiro-AAAA-MM.json`, recomendado como backup principal;
+- `controle-financeiro-AAAA-MM.xlsx`, recomendado para análise em planilha;
+- `controle-financeiro-AAAA-MM.pdf`, recomendado para resumo visual.
+
+Para restaurar, basta carregar no app um JSON ou Excel exportado anteriormente. Após a importação, o aplicativo mostra um resumo visual com quantidade de lançamentos, dívidas, meta encontrada e período dos dados.
+
+## Como executar
+
+Instale as dependências:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Como executar
-
-Use:
+Execute:
 
 ```bash
 streamlit run app.py
@@ -49,41 +88,44 @@ Normalmente o app abre em:
 http://localhost:8501
 ```
 
-No Windows, também é possível dar dois cliques em:
+No Windows, também é possível abrir pelo arquivo:
 
 ```text
 executar_app.bat
 ```
 
-## Publicação no Streamlit Cloud
+## Deploy no Streamlit Cloud
 
-Para publicar na web, suba estes arquivos para um repositório no GitHub:
+Estrutura mínima do repositório:
 
 ```text
 app.py
 requirements.txt
 README.md
 PRIVACIDADE_LGPD.md
+docs/screenshots/
 ```
 
-Depois, acesse `https://share.streamlit.io`, conecte sua conta do GitHub, selecione o repositório e informe `app.py` como arquivo principal do aplicativo.
+Passos:
 
-O app não usa banco de dados. No Streamlit Cloud, os dados preenchidos ficam apenas na sessão de uso. Para continuar depois, o usuário deve baixar Excel ou JSON na aba **Histórico** e salvar no próprio dispositivo. O Excel ou JSON exportado pelo app pode ser carregado novamente em outro acesso.
+1. Subir os arquivos para um repositório no GitHub.
+2. Acessar [Streamlit Cloud](https://share.streamlit.io).
+3. Conectar a conta do GitHub.
+4. Selecionar o repositório.
+5. Informar `app.py` como arquivo principal.
+6. Publicar.
 
-Os botões principais de **Exportar Excel**, **Exportar JSON** e **Importar arquivo** também ficam na barra lateral do aplicativo.
+## Testes finais sugeridos
 
-## Privacidade
+- Exportar Excel, JSON e PDF.
+- Importar JSON e Excel.
+- Testar a restauração depois de limpar os dados.
+- Conferir tabelas, gráficos, sidebar e botões em tela mobile.
+- Validar se os nomes dos arquivos aparecem com ano e mês.
+- Confirmar que o backup JSON baixa corretamente antes de encerrar a sessão.
 
-A política completa está no arquivo `PRIVACIDADE_LGPD.md` e também na aba **Privacidade e LGPD** do app.
+## Identificação
 
-## Fluxo de uso
-
-1. Registre entradas e gastos em **Registrar**.
-2. Acompanhe parcelas em **Dívidas**.
-3. Veja o saldo em **Resultado do mês**.
-4. Crie uma meta simples em **Metas**.
-5. Compare formas de guardar em **Guardando dinheiro**.
-6. Baixe Excel, PDF ou JSON em **Histórico** ou pela barra lateral.
-7. Consulte privacidade e LGPD na aba **Privacidade e LGPD**.
-
-As simulações e comparações servem apenas como referência para estudo e organização pessoal.
+- **Responsável:** Yohann da Rocha Risso
+- **Projeto:** Organização Financeira na Prática
+- **Instituição:** PUC Minas - Ciências Econômicas EaD
