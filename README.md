@@ -17,7 +17,7 @@ O projeto foi pensado para uso cotidiano, sem login, banco de dados ou coleta de
 - Painel simples com entrou, saiu, sobrou/faltou e principal categoria.
 - Insight contextual do mês e comparação com o mês anterior por categoria.
 - Cadastro de dívidas com total restante, parcelas do mês e parcelas restantes.
-- Meta para guardar dinheiro e simulação de evolução mensal.
+- Metas múltiplas para guardar dinheiro, com progresso, prioridade e simulação de evolução mensal.
 - Histórico anual com resumo mês a mês e categorias principais.
 - Exportação em Excel, PDF visual e JSON.
 - Importação de backup JSON ou Excel exportado pelo próprio app.

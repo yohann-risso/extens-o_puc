@@ -8,7 +8,10 @@ para facilitar manutenção e apresentação.
 
 from datetime import date, datetime, timedelta
 from io import BytesIO
+import base64
 import json
+from math import ceil
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -18,6 +21,11 @@ import streamlit as st
 
 
 DISPLAY_NAME = "Organização Financeira na Prática"
+PROJECT_ROOT = Path(__file__).resolve().parent
+ASSETS_DIR = PROJECT_ROOT / "assets"
+LOGO_PATH = ASSETS_DIR / "logo-organizacao-financeira.svg"
+FAVICON_PATH = ASSETS_DIR / "favicon-organizacao-financeira.png"
+BRASAO_PUC_PATH = ASSETS_DIR / "brasao-pucminas-footer.png"
 BCB_BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
 CACHE_TAXAS_BCB = "bcb-parser-v3"
 FORMATO_MOEDA_EXCEL = '"R$" #,##0.00'
@@ -65,6 +73,8 @@ COLUNAS_DIVIDAS = ["Dívida", "Falta pagar", "Parcela do mês", "Parcelas restan
 COLUNAS_DATA = ["Data", "Início", "Fim"]
 COLUNAS_RESUMO_ANUAL = ["Entradas", "Gastos fixos", "Gastos não fixos", "Total de gastos", "Sobrou/Faltou"]
 COLUNAS_MOEDA_RELATORIO = COLUNAS_RESUMO_ANUAL + ["Valor", "Falta pagar", "Parcela do mês"]
+COLUNAS_METAS = ["Objetivo", "Valor total", "Já guardado", "Prazo (meses)", "Prioridade"]
+PRIORIDADES_META = ["Alta", "Média", "Baixa"]
 ICONE_CATEGORIA = {
     "Salário": "💰",
     "Horas extras": "💰",
@@ -181,6 +191,28 @@ def formatar_tabela_simulacao(tabela: pd.DataFrame) -> pd.DataFrame:
     return formatar_tabela(tabela, colunas_moeda=colunas_moeda)
 
 
+def formatar_tabela_metas(tabela: pd.DataFrame) -> pd.DataFrame:
+    """Formata metas para leitura no painel."""
+    dados = formatar_tabela(
+        tabela,
+        colunas=[
+            "Objetivo",
+            "Prioridade",
+            "Valor total",
+            "Já guardado",
+            "Falta",
+            "Prazo (meses)",
+            "Guardar por mês",
+            "Progresso",
+            "Situação",
+        ],
+        colunas_moeda=["Valor total", "Já guardado", "Falta", "Guardar por mês"],
+    )
+    if "Progresso" in dados.columns:
+        dados["Progresso"] = dados["Progresso"].map(lambda valor: f"{formatar_decimal(float(valor))}%")
+    return dados
+
+
 def formatar_tabela_resumo_anual(tabela: pd.DataFrame) -> pd.DataFrame:
     """Formata o resumo anual mês a mês."""
     return formatar_tabela(tabela, colunas_moeda=COLUNAS_RESUMO_ANUAL)
@@ -218,9 +250,34 @@ def icone_categoria(categoria: str) -> str:
     return ICONE_CATEGORIA.get(categoria, "•")
 
 
+def imagem_data_uri(caminho: Path, mime_type: str) -> str:
+    """Transforma um asset local em data URI para uso no HTML do Streamlit."""
+    try:
+        conteudo = caminho.read_bytes()
+    except OSError:
+        return ""
+    return f"data:{mime_type};base64,{base64.b64encode(conteudo).decode('ascii')}"
+
+
+def favicon_da_pagina() -> bytes | str:
+    """Carrega o favicon do projeto, com fallback simples se o arquivo sumir."""
+    try:
+        return FAVICON_PATH.read_bytes()
+    except OSError:
+        return "R$"
+
+
+def logo_html(classe: str) -> str:
+    """Monta a tag do logo com fallback textual."""
+    logo_uri = imagem_data_uri(LOGO_PATH, "image/svg+xml")
+    if not logo_uri:
+        return f'<strong class="{classe} logo-text-fallback">{DISPLAY_NAME}</strong>'
+    return f'<img class="{classe}" src="{logo_uri}" alt="{DISPLAY_NAME}">'
+
+
 def configurar_pagina() -> None:
     """Configura a página e o CSS básico do app."""
-    st.set_page_config(page_title=DISPLAY_NAME, layout="wide", initial_sidebar_state="expanded")
+    st.set_page_config(page_title=DISPLAY_NAME, page_icon=favicon_da_pagina(), layout="wide", initial_sidebar_state="expanded")
     st.markdown(
         """
         <style>
@@ -246,6 +303,36 @@ def configurar_pagina() -> None:
             padding: 1.25rem 1.35rem;
             box-shadow: 0 12px 30px rgba(23, 32, 38, .06);
             margin-bottom: 1rem;
+        }
+        .brand-logo {
+            display: block;
+            height: auto;
+        }
+        .hero-logo {
+            margin-bottom: .85rem;
+            width: min(100%, 520px);
+        }
+        .sidebar-logo {
+            height: auto;
+            margin: .1rem 0 .35rem 0;
+            width: min(100%, 242px);
+        }
+        .logo-text-fallback {
+            color: var(--ink);
+            display: inline-block;
+            font-size: 1.35rem;
+            line-height: 1.2;
+            margin-bottom: .75rem;
+        }
+        .visually-hidden {
+            border: 0;
+            clip: rect(0 0 0 0);
+            height: 1px;
+            margin: -1px;
+            overflow: hidden;
+            padding: 0;
+            position: absolute;
+            width: 1px;
         }
         .hero h1 { font-size: clamp(1.55rem, 3vw, 2.4rem); margin: 0 0 .4rem 0; }
         .hero p { color: var(--muted); margin: .15rem 0; max-width: 900px; }
@@ -314,6 +401,39 @@ def configurar_pagina() -> None:
             padding: .7rem .8rem;
             margin: .5rem 0 .75rem 0;
         }
+        .app-footer {
+            align-items: center;
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: 0 8px 22px rgba(23, 32, 38, .045);
+            display: flex;
+            gap: 1rem;
+            justify-content: space-between;
+            margin-top: 2rem;
+            padding: .95rem 1rem;
+        }
+        .footer-copy {
+            display: flex;
+            flex-direction: column;
+            gap: .12rem;
+        }
+        .footer-copy strong { color: var(--ink); font-size: .98rem; }
+        .footer-copy span { color: var(--ink); font-weight: 650; }
+        .footer-copy small { color: var(--muted); }
+        .footer-institution {
+            align-items: center;
+            color: #244b38;
+            display: flex;
+            flex-shrink: 0;
+            font-weight: 750;
+            gap: .65rem;
+        }
+        .footer-institution img {
+            height: 64px;
+            object-fit: contain;
+            width: auto;
+        }
         div[data-testid="stAlert"] { border-radius: 8px; }
         .stTabs [data-baseweb="tab-list"] { gap: .35rem; flex-wrap: wrap; }
         .stTabs [data-baseweb="tab"] {
@@ -321,6 +441,13 @@ def configurar_pagina() -> None:
             border: 1px solid var(--line);
             border-radius: 999px;
             padding: .45rem .8rem;
+        }
+        @media (max-width: 680px) {
+            .app-footer {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+            .footer-institution img { height: 58px; }
         }
         </style>
         """,
@@ -360,6 +487,35 @@ def panel_html(titulo: str, texto: str) -> None:
 def backup_hint(texto: str) -> None:
     """Reforça que o backup é local e depende do download do usuário."""
     st.markdown(f'<div class="backup-hint">{texto}</div>', unsafe_allow_html=True)
+
+
+def logo_barra_lateral() -> None:
+    """Mostra o logo do app no topo da barra lateral."""
+    st.sidebar.markdown(logo_html("brand-logo sidebar-logo"), unsafe_allow_html=True)
+
+
+def rodape_institucional() -> None:
+    """Mostra autoria e vínculo institucional no rodapé."""
+    brasao_uri = imagem_data_uri(BRASAO_PUC_PATH, "image/png")
+    brasao_html = ""
+    if brasao_uri:
+        brasao_html = f'<img src="{brasao_uri}" alt="Brasão da PUC Minas">'
+    st.markdown(
+        f"""
+        <footer class="app-footer" aria-label="Rodapé">
+            <div class="footer-copy">
+                <strong>{DISPLAY_NAME}</strong>
+                <span>desenvolvido por Yohann da Rocha Risso</span>
+                <small>As comparações possuem caráter informativo.</small>
+            </div>
+            <div class="footer-institution">
+                {brasao_html}
+                <span>PUC Minas</span>
+            </div>
+        </footer>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def nome_arquivo_exportacao(extensao: str, prefixo: str = PREFIXO_ARQUIVO, incluir_hora: bool = False) -> str:
@@ -422,6 +578,66 @@ def grafico_barras_horizontais(
     limpar_grafico(fig)
     fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
     fig.update_yaxes(showgrid=False)
+    return fig
+
+
+def grafico_barras_verticais(
+    dados: pd.DataFrame,
+    eixo_x: str,
+    cores: list[str] | None = None,
+    mapa_cores: dict[str, str] | None = None,
+):
+    """Cria gráfico vertical para comparações curtas."""
+    sequencia_cores = cores if cores is not None else px.colors.qualitative.Set2
+    fig = px.bar(
+        dados,
+        x=eixo_x,
+        y="Valor",
+        text="Texto",
+        color=eixo_x,
+        color_discrete_sequence=sequencia_cores,
+        color_discrete_map=mapa_cores,
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    limpar_grafico(fig)
+    aplicar_eixo_moeda(fig)
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
+    return fig
+
+
+def grafico_rosca(
+    dados: pd.DataFrame,
+    coluna_nome: str,
+    coluna_valor: str = "Valor",
+    cores: list[str] | None = None,
+):
+    """Cria gráfico de rosca para mostrar composição."""
+    dados_grafico = dados[dados[coluna_valor] > 0].copy()
+    dados_grafico["Texto"] = dados_grafico[coluna_valor].map(formatar_moeda)
+    fig = px.pie(
+        dados_grafico,
+        names=coluna_nome,
+        values=coluna_valor,
+        hole=0.55,
+        color_discrete_sequence=cores or ["#2f7d59", "#2f6f9f", "#c45f4b", "#b7791f", "#7b61a8"],
+        custom_data=["Texto"],
+    )
+    fig.update_traces(
+        textinfo="label+percent",
+        textposition="inside",
+        hovertemplate="%{label}<br>%{customdata[0]}<extra></extra>",
+    )
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=15, b=10))
+    return fig
+
+
+def grafico_linha_moeda(dados: pd.DataFrame, eixo_x: str, eixo_y: str, cor: str = "#2f6f9f"):
+    """Cria linha simples para evolução de valores em reais."""
+    fig = px.line(dados, x=eixo_x, y=eixo_y, markers=True)
+    fig.update_traces(line_color=cor)
+    limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
+    aplicar_eixo_moeda(fig)
     return fig
 
 
@@ -584,6 +800,178 @@ def normalizar_dividas(df: pd.DataFrame) -> pd.DataFrame:
     return dados.reset_index(drop=True)
 
 
+def criar_metas_padrao() -> pd.DataFrame:
+    """Cria a tabela vazia para cadastro de metas."""
+    return pd.DataFrame(columns=COLUNAS_METAS)
+
+
+def normalizar_metas(df: object) -> pd.DataFrame:
+    """Limpa a tabela de metas e aceita backups antigos com uma meta única."""
+    if df is None:
+        return criar_metas_padrao()
+
+    dados = pd.DataFrame(df).copy()
+    if dados.empty:
+        return criar_metas_padrao()
+
+    dados = dados.rename(
+        columns={
+            "objetivo": "Objetivo",
+            "valor_total": "Valor total",
+            "valor_guardado": "Já guardado",
+            "prazo_meses": "Prazo (meses)",
+            "prioridade": "Prioridade",
+        }
+    )
+    for coluna in COLUNAS_METAS:
+        if coluna not in dados.columns:
+            if coluna == "Prazo (meses)":
+                dados[coluna] = 6
+            elif coluna == "Prioridade":
+                dados[coluna] = "Média"
+            elif coluna == "Objetivo":
+                dados[coluna] = ""
+            else:
+                dados[coluna] = 0.0
+
+    dados = dados[COLUNAS_METAS].copy()
+    dados["Objetivo"] = dados["Objetivo"].fillna("").astype(str).str.strip()
+    dados["Valor total"] = pd.to_numeric(dados["Valor total"], errors="coerce").fillna(0.0).clip(lower=0.0)
+    dados["Já guardado"] = pd.to_numeric(dados["Já guardado"], errors="coerce").fillna(0.0).clip(lower=0.0)
+    dados["Prazo (meses)"] = (
+        pd.to_numeric(dados["Prazo (meses)"], errors="coerce")
+        .fillna(6)
+        .clip(lower=1, upper=240)
+        .round()
+        .astype(int)
+    )
+    dados["Prioridade"] = dados["Prioridade"].fillna("Média").astype(str)
+    dados.loc[~dados["Prioridade"].isin(PRIORIDADES_META), "Prioridade"] = "Média"
+
+    tem_conteudo = (
+        (dados["Objetivo"] != "")
+        | (dados["Valor total"] > 0)
+        | (dados["Já guardado"] > 0)
+    )
+    return dados[tem_conteudo].reset_index(drop=True)
+
+
+def metas_de_configuracoes(configuracoes: object) -> pd.DataFrame:
+    """Converte a meta antiga da configuração para a tabela de metas."""
+    dados = configuracoes if hasattr(configuracoes, "get") else {}
+    objetivo = texto_configuracao(dados.get("meta_objetivo", ""))
+    valor_total = numero_configuracao(dados.get("meta_valor_total", 0.0), 0.0)
+    valor_guardado = numero_configuracao(dados.get("meta_valor_guardado", 0.0), 0.0)
+    prazo = inteiro_configuracao(dados.get("meta_prazo_meses", 6), 6, 1, 240)
+    if not objetivo.strip() and valor_total <= 0 and valor_guardado <= 0:
+        return criar_metas_padrao()
+    return normalizar_metas(
+        [
+            {
+                "Objetivo": objetivo,
+                "Valor total": valor_total,
+                "Já guardado": valor_guardado,
+                "Prazo (meses)": prazo,
+                "Prioridade": "Alta",
+            }
+        ]
+    )
+
+
+def metas_atuais() -> pd.DataFrame:
+    """Lê as metas da sessão e migra a meta única antiga quando necessário."""
+    if "metas_df" not in st.session_state:
+        st.session_state["metas_df"] = metas_de_configuracoes(st.session_state)
+    metas = normalizar_metas(st.session_state.get("metas_df", criar_metas_padrao()))
+    st.session_state["metas_df"] = metas
+    return metas
+
+
+def calcular_metas(metas: pd.DataFrame, saldo: float) -> pd.DataFrame:
+    """Calcula progresso e esforço mensal para cada meta."""
+    dados = normalizar_metas(metas)
+    if dados.empty:
+        return dados.assign(
+            Falta=pd.Series(dtype=float),
+            **{
+                "Guardar por mês": pd.Series(dtype=float),
+                "Progresso": pd.Series(dtype=float),
+                "Folga após guardar": pd.Series(dtype=float),
+                "Prazo sugerido": pd.Series(dtype=int),
+                "Situação": pd.Series(dtype=str),
+            },
+        )
+
+    dados["Falta"] = (dados["Valor total"] - dados["Já guardado"]).clip(lower=0.0)
+    dados["Guardar por mês"] = dados["Falta"] / dados["Prazo (meses)"].clip(lower=1)
+    dados["Progresso"] = dados.apply(
+        lambda linha: min((linha["Já guardado"] / linha["Valor total"]) * 100, 100) if linha["Valor total"] > 0 else 0.0,
+        axis=1,
+    )
+    dados["Folga após guardar"] = float(saldo) - dados["Guardar por mês"]
+    dados["Prazo sugerido"] = dados["Falta"].map(lambda falta: ceil(falta / saldo) if saldo > 0 and falta > 0 else 0)
+
+    def situacao(linha: pd.Series) -> str:
+        if linha["Valor total"] <= 0:
+            return "Planejar"
+        if linha["Falta"] <= 0:
+            return "Concluída"
+        if saldo >= linha["Guardar por mês"]:
+            return "Cabe"
+        return "Ajustar"
+
+    dados["Situação"] = dados.apply(situacao, axis=1)
+    prioridade_ordem = {"Alta": 0, "Média": 1, "Baixa": 2}
+    dados["Ordem prioridade"] = dados["Prioridade"].map(prioridade_ordem).fillna(1).astype(int)
+    return dados.sort_values(["Ordem prioridade", "Situação", "Objetivo"]).drop(columns=["Ordem prioridade"]).reset_index(drop=True)
+
+
+def indice_meta_foco(metas: pd.DataFrame) -> int | None:
+    """Escolhe a meta em foco, respeitando a seleção anterior quando existir."""
+    if metas.empty:
+        return None
+    indice = int(st.session_state.get("meta_foco_indice", 0) or 0)
+    indice = max(0, min(indice, len(metas) - 1))
+    st.session_state["meta_foco_indice"] = indice
+    return indice
+
+
+def meta_dict_de_linha(linha: pd.Series | None) -> dict[str, object]:
+    """Converte uma linha calculada de meta para o formato usado pelo restante do app."""
+    if linha is None:
+        return {
+            "objetivo": "",
+            "valor_total": 0.0,
+            "valor_guardado": 0.0,
+            "faltante": 0.0,
+            "prazo_meses": 6,
+            "valor_mensal_necessario": 0.0,
+            "progresso_percentual": 0.0,
+            "situacao": "Não",
+        }
+    return {
+        "objetivo": str(linha.get("Objetivo", "")),
+        "valor_total": float(linha.get("Valor total", 0.0) or 0.0),
+        "valor_guardado": float(linha.get("Já guardado", 0.0) or 0.0),
+        "faltante": float(linha.get("Falta", 0.0) or 0.0),
+        "prazo_meses": int(linha.get("Prazo (meses)", 6) or 6),
+        "valor_mensal_necessario": float(linha.get("Guardar por mês", 0.0) or 0.0),
+        "progresso_percentual": float(linha.get("Progresso", 0.0) or 0.0),
+        "situacao": str(linha.get("Situação", "Não")),
+    }
+
+
+def sincronizar_meta_legada(metas: pd.DataFrame) -> None:
+    """Mantém os campos antigos atualizados para backups e telas existentes."""
+    metas_calculadas = calcular_metas(metas, 0.0)
+    indice = indice_meta_foco(metas_calculadas)
+    meta = meta_dict_de_linha(metas_calculadas.iloc[indice] if indice is not None else None)
+    st.session_state["meta_objetivo"] = meta["objetivo"]
+    st.session_state["meta_valor_total"] = meta["valor_total"]
+    st.session_state["meta_valor_guardado"] = meta["valor_guardado"]
+    st.session_state["meta_prazo_meses"] = meta["prazo_meses"]
+
+
 def valor_para_json(valor: object) -> object:
     """Converte valores de tabela para um formato seguro no arquivo JSON."""
     if isinstance(valor, pd.Timestamp):
@@ -667,6 +1055,7 @@ def normalizar_configuracoes_backup(configuracoes: object) -> dict[str, object]:
         "somar_dividas": booleano_configuracao(dados.get("somar_dividas", True), True),
         "meta_objetivo": texto_configuracao(dados.get("meta_objetivo", "")),
         "meta_valor_total": numero_configuracao(dados.get("meta_valor_total", 0.0), 0.0),
+        "meta_valor_guardado": numero_configuracao(dados.get("meta_valor_guardado", 0.0), 0.0),
         "meta_prazo_meses": inteiro_configuracao(dados.get("meta_prazo_meses", 6), 6, 1, 240),
         "sim_valor_inicial": numero_configuracao(dados.get("sim_valor_inicial", 300.0), 300.0),
         "sim_valor_mensal": numero_configuracao(dados.get("sim_valor_mensal", 100.0), 100.0),
@@ -676,11 +1065,13 @@ def normalizar_configuracoes_backup(configuracoes: object) -> dict[str, object]:
 
 def obter_configuracoes_backup() -> dict[str, object]:
     """Reúne as configurações atuais para exportação e restauração local."""
+    sincronizar_meta_legada(metas_atuais())
     return normalizar_configuracoes_backup(
         {
             "somar_dividas": st.session_state.get("somar_dividas", True),
             "meta_objetivo": st.session_state.get("meta_objetivo", ""),
             "meta_valor_total": st.session_state.get("meta_valor_total", 0.0),
+            "meta_valor_guardado": st.session_state.get("meta_valor_guardado", 0.0),
             "meta_prazo_meses": st.session_state.get("meta_prazo_meses", 6),
             "sim_valor_inicial": st.session_state.get("sim_valor_inicial", 300.0),
             "sim_valor_mensal": st.session_state.get("sim_valor_mensal", 100.0),
@@ -710,14 +1101,18 @@ def resumir_backup_importado(
     lancamentos: pd.DataFrame,
     dividas: pd.DataFrame,
     configuracoes: dict[str, object],
+    metas: pd.DataFrame | None = None,
 ) -> dict[str, object]:
     """Monta os dados visuais mostrados após uma restauração."""
     objetivo_meta = str(configuracoes.get("meta_objetivo", "")).strip()
     valor_meta = float(configuracoes.get("meta_valor_total", 0.0) or 0.0)
+    metas_normalizadas = normalizar_metas(metas)
+    quantidade_metas = len(metas_normalizadas)
+    texto_meta = f"{quantidade_metas} meta(s) encontrada(s)" if quantidade_metas else "Meta ativa encontrada" if objetivo_meta or valor_meta > 0 else "Sem meta ativa"
     return {
         "lancamentos": int(len(lancamentos)),
         "dividas": int(len(dividas)),
-        "meta": "Meta ativa encontrada" if objetivo_meta or valor_meta > 0 else "Sem meta ativa",
+        "meta": texto_meta,
         "periodo": periodo_resumo_backup(lancamentos),
     }
 
@@ -741,16 +1136,21 @@ def agendar_importacao(
     dividas: pd.DataFrame,
     configuracoes: dict[str, object],
     mensagem: str,
+    metas: pd.DataFrame | None = None,
 ) -> None:
     """Agenda a restauração para a próxima execução, antes da criação dos widgets."""
     lancamentos_normalizados = normalizar_lancamentos(lancamentos)
     dividas_normalizadas = normalizar_dividas(dividas)
     configuracoes_normalizadas = normalizar_configuracoes_backup(configuracoes)
+    metas_normalizadas = normalizar_metas(metas)
+    if metas_normalizadas.empty:
+        metas_normalizadas = metas_de_configuracoes(configuracoes_normalizadas)
     st.session_state["importacao_pendente"] = {
         "lancamentos_df": lancamentos_normalizados,
         "dividas_df": dividas_normalizadas,
+        "metas_df": metas_normalizadas,
         "configuracoes": configuracoes_normalizadas,
-        "resumo": resumir_backup_importado(lancamentos_normalizados, dividas_normalizadas, configuracoes_normalizadas),
+        "resumo": resumir_backup_importado(lancamentos_normalizados, dividas_normalizadas, configuracoes_normalizadas, metas_normalizadas),
         "mensagem": mensagem,
     }
 
@@ -763,6 +1163,7 @@ def exportar_json(lancamentos: pd.DataFrame, dividas: pd.DataFrame) -> bytes:
         "observacao": "Backup local gerado pelo usuário. O app não mantém armazenamento permanente.",
         "lancamentos": dataframe_para_registros_json(lancamentos),
         "dividas": dataframe_para_registros_json(dividas),
+        "metas": dataframe_para_registros_json(metas_atuais()),
         "configuracoes": {chave: valor_para_json(valor) for chave, valor in obter_configuracoes_backup().items()},
     }
     return json.dumps(dados, ensure_ascii=False, indent=2).encode("utf-8")
@@ -779,6 +1180,7 @@ def importar_json(conteudo: bytes) -> None:
         pd.DataFrame(dados.get("dividas", [])),
         dados.get("configuracoes", {}),
         "Arquivo JSON carregado. Os dados foram restaurados nesta sessão.",
+        pd.DataFrame(dados.get("metas", [])),
     )
 
 
@@ -797,19 +1199,34 @@ def importar_excel(conteudo: bytes) -> None:
         raise ValueError("Planilha incompatível com este app.")
 
     configuracoes = primeira_linha_planilha(planilhas, "Configuracoes")
+    metas_planilha = planilhas.get("Metas", pd.DataFrame())
     if not configuracoes:
         meta = primeira_linha_planilha(planilhas, "Meta")
         configuracoes = {
             "meta_objetivo": meta.get("objetivo", ""),
             "meta_valor_total": meta.get("valor_total", 0.0),
+            "meta_valor_guardado": meta.get("valor_guardado", 0.0),
             "meta_prazo_meses": meta.get("prazo_meses", 6),
         }
+        if metas_planilha.empty and meta:
+            metas_planilha = pd.DataFrame(
+                [
+                    {
+                        "Objetivo": meta.get("objetivo", ""),
+                        "Valor total": meta.get("valor_total", 0.0),
+                        "Já guardado": meta.get("valor_guardado", 0.0),
+                        "Prazo (meses)": meta.get("prazo_meses", 6),
+                        "Prioridade": "Alta",
+                    }
+                ]
+            )
 
     agendar_importacao(
         planilhas.get("Lancamentos", pd.DataFrame()),
         planilhas.get("Dividas", pd.DataFrame()),
         configuracoes,
         "Planilha Excel carregada. Os dados foram restaurados nesta sessão.",
+        metas_planilha,
     )
 
 
@@ -852,9 +1269,11 @@ def aplicar_importacao_pendente() -> None:
 
     st.session_state["lancamentos_df"] = importacao["lancamentos_df"]
     st.session_state["dividas_df"] = importacao["dividas_df"]
+    st.session_state["metas_df"] = importacao.get("metas_df", criar_metas_padrao())
     for chave, valor in importacao.get("configuracoes", {}).items():
         st.session_state[chave] = valor
     st.session_state["editor_versao"] = int(st.session_state.get("editor_versao", 0)) + 1
+    st.session_state["metas_editor_versao"] = int(st.session_state.get("metas_editor_versao", 0)) + 1
     st.session_state["mensagem_importacao"] = importacao.get(
         "mensagem",
         "Arquivo carregado. Os dados foram restaurados nesta sessão.",
@@ -1361,12 +1780,19 @@ def carregar_exemplo() -> None:
         ]
     )
     st.session_state["somar_dividas"] = True
-    st.session_state["meta_valor_total"] = 1000.0
-    st.session_state["meta_objetivo"] = "Dinheiro guardado para emergência"
-    st.session_state["meta_prazo_meses"] = 8
+    st.session_state["metas_df"] = normalizar_metas(
+        [
+            {"Objetivo": "Reserva de emergência", "Valor total": 3000.0, "Já guardado": 600.0, "Prazo (meses)": 12, "Prioridade": "Alta"},
+            {"Objetivo": "Curso de especialização", "Valor total": 900.0, "Já guardado": 150.0, "Prazo (meses)": 5, "Prioridade": "Média"},
+            {"Objetivo": "Viagem curta", "Valor total": 1200.0, "Já guardado": 0.0, "Prazo (meses)": 10, "Prioridade": "Baixa"},
+        ]
+    )
+    st.session_state["meta_foco_indice"] = 0
+    sincronizar_meta_legada(st.session_state["metas_df"])
     st.session_state["sim_valor_inicial"] = 300.0
     st.session_state["sim_valor_mensal"] = 100.0
     st.session_state["sim_meses"] = 12
+    st.session_state["metas_editor_versao"] = int(st.session_state.get("metas_editor_versao", 0)) + 1
     st.session_state["mensagem_feedback"] = "Exemplo carregado com dados próximos do cotidiano."
 
 
@@ -1393,20 +1819,11 @@ def dividas_atuais() -> tuple[pd.DataFrame, float]:
 
 
 def meta_atual(saldo: float) -> dict[str, object]:
-    """Monta a meta atual sem precisar renderizar a tela de metas."""
-    objetivo = str(st.session_state.get("meta_objetivo", "") or "")
-    valor_total = float(st.session_state.get("meta_valor_total", 0.0) or 0.0)
-    prazo = int(st.session_state.get("meta_prazo_meses", 6) or 6)
-    prazo = max(1, min(prazo, 240))
-    mensal = valor_total / prazo if prazo else 0.0
-    cabe = saldo >= mensal and mensal > 0
-    return {
-        "objetivo": objetivo,
-        "valor_total": valor_total,
-        "prazo_meses": prazo,
-        "valor_mensal_necessario": mensal,
-        "situacao": "Sim" if cabe else "Não",
-    }
+    """Monta a meta em foco sem precisar renderizar a tela de metas."""
+    metas = calcular_metas(metas_atuais(), saldo)
+    indice = indice_meta_foco(metas)
+    linha = metas.iloc[indice] if indice is not None else None
+    return meta_dict_de_linha(linha)
 
 
 def simulacao_atual(meta: dict[str, object]) -> dict[str, object]:
@@ -1416,7 +1833,7 @@ def simulacao_atual(meta: dict[str, object]) -> dict[str, object]:
     tr_mensal = float(taxas["tr_mensal"])
     meses_padrao = max(int(meta.get("prazo_meses", 12)), 1)
     return simular_cenarios(
-        valor_inicial=float(st.session_state.get("sim_valor_inicial", 300.0) or 0.0),
+        valor_inicial=float(st.session_state.get("sim_valor_inicial", meta.get("valor_guardado", 300.0)) or 0.0),
         valor_mensal=float(st.session_state.get("sim_valor_mensal", meta.get("valor_mensal_necessario", 0.0)) or 0.0),
         meses=int(st.session_state.get("sim_meses", meses_padrao) or meses_padrao),
         selic_aa=referencia_aa,
@@ -1436,7 +1853,8 @@ def tela_inicio() -> None:
     st.markdown(
         f"""
         <div class="hero">
-            <h1>{DISPLAY_NAME}</h1>
+            <h1 class="visually-hidden">{DISPLAY_NAME}</h1>
+            {logo_html("brand-logo hero-logo")}
             <p>Organize entradas, gastos, parcelas e metas em poucos minutos.</p>
             <p>As comparações possuem caráter informativo.</p>
             <div class="chip-row">
@@ -1561,15 +1979,52 @@ def aba_lancamentos() -> pd.DataFrame:
     with c4:
         card("🛍️ Variáveis", formatar_moeda(gastos["total_variaveis"]), "Compras e gastos que variam.", "blue")
 
-    if not lancamentos.empty:
-        st.markdown("#### Resumo por categoria")
-        por_categoria = (
-            lancamentos.groupby(["Tipo", "Categoria"], as_index=False)["Valor"].sum().sort_values(["Tipo", "Valor"], ascending=[True, False])
+    st.markdown("#### Visualização rápida")
+    col_fluxo, col_composicao = st.columns(2)
+    with col_fluxo:
+        dados_fluxo = pd.DataFrame({"Tipo": ["Entradas", "Gastos"], "Valor": [entradas, total_gastos]})
+        dados_fluxo["Texto"] = dados_fluxo["Valor"].map(formatar_moeda)
+        if dados_fluxo["Valor"].sum() > 0:
+            fig = grafico_barras_verticais(
+                dados_fluxo,
+                "Tipo",
+                mapa_cores={"Entradas": "#2f7d59", "Gastos": "#c45f4b"},
+            )
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Adicione valores para comparar entradas e gastos.")
+    with col_composicao:
+        dados_composicao = pd.DataFrame(
+            {
+                "Grupo": ["Gastos fixos", "Gastos variáveis"],
+                "Valor": [gastos["total_fixos"], gastos["total_variaveis"]],
+            }
         )
-        por_categoria["Categoria"] = por_categoria["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
+        if dados_composicao["Valor"].sum() > 0:
+            fig = grafico_rosca(dados_composicao, "Grupo", cores=["#b7791f", "#2f6f9f"])
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Marque gastos fixos e variáveis para ver a composição.")
+
+    st.markdown("#### Resumo por categoria")
+    por_categoria = (
+        lancamentos.groupby(["Tipo", "Categoria"], as_index=False)["Valor"].sum().sort_values(["Tipo", "Valor"], ascending=[True, False])
+    )
+    por_categoria["Categoria"] = por_categoria["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
+    col_tabela, col_grafico = st.columns([1.1, 1])
+    with col_tabela:
         tabela = por_categoria.copy()
         tabela["Valor"] = tabela["Valor"].map(formatar_moeda)
         st.dataframe(tabela, hide_index=True, width="stretch")
+    with col_grafico:
+        gastos_categoria = por_categoria[por_categoria["Tipo"] == "Gasto"].copy().head(8)
+        if gastos_categoria.empty:
+            st.info("Registre gastos para ver as principais categorias.")
+        else:
+            gastos_categoria["Texto"] = gastos_categoria["Valor"].map(formatar_moeda)
+            fig = grafico_barras_horizontais(gastos_categoria, "Categoria")
+            fig.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig, width="stretch")
     return lancamentos
 
 
@@ -1621,6 +2076,36 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
     c4, _ = st.columns(2)
     with c4:
         card("📌 No resultado", formatar_moeda(total), "Peso mensal considerado no mês.", "green" if total == 0 else "red")
+
+    if not dividas.empty:
+        st.markdown("#### Visão das dívidas")
+        col_aberto, col_parcela = st.columns(2)
+
+        with col_aberto:
+            dividas_abertas = dividas[["Dívida", "Falta pagar"]].copy()
+            dividas_abertas["Dívida"] = dividas_abertas["Dívida"].replace("", "Sem nome")
+            dividas_abertas = dividas_abertas.rename(columns={"Falta pagar": "Valor"})
+            dividas_abertas = dividas_abertas[dividas_abertas["Valor"] > 0].sort_values("Valor", ascending=False).head(8)
+            if dividas_abertas.empty:
+                st.info("Informe o valor em aberto para ver o peso de cada dívida.")
+            else:
+                dividas_abertas["Texto"] = dividas_abertas["Valor"].map(formatar_moeda)
+                fig = grafico_barras_horizontais(dividas_abertas, "Dívida", ["#c45f4b", "#b7791f", "#2f6f9f", "#2f7d59"])
+                fig.update_layout(yaxis={"categoryorder": "total ascending"})
+                st.plotly_chart(fig, width="stretch")
+
+        with col_parcela:
+            parcelas_mes = dividas[["Dívida", "Parcela do mês"]].copy()
+            parcelas_mes["Dívida"] = parcelas_mes["Dívida"].replace("", "Sem nome")
+            parcelas_mes = parcelas_mes.rename(columns={"Parcela do mês": "Valor"})
+            parcelas_mes = parcelas_mes[parcelas_mes["Valor"] > 0].sort_values("Valor", ascending=False).head(8)
+            if parcelas_mes.empty:
+                st.info("Informe parcelas do mês para comparar os compromissos.")
+            else:
+                parcelas_mes["Texto"] = parcelas_mes["Valor"].map(formatar_moeda)
+                fig = grafico_barras_horizontais(parcelas_mes, "Dívida", ["#2f6f9f", "#b7791f", "#c45f4b", "#2f7d59"])
+                fig.update_layout(yaxis={"categoryorder": "total ascending"})
+                st.plotly_chart(fig, width="stretch")
     return dividas, total
 
 
@@ -1654,6 +2139,38 @@ def exibir_painel(
     tendencias = resumo_final.get("tendencias", pd.DataFrame())
     if isinstance(tendencias, pd.DataFrame) and not tendencias.empty:
         panel_html("Tendência", str(tendencias.iloc[0]["Texto"]))
+
+    st.markdown("#### Visual do mês")
+    col_fluxo, col_saida = st.columns(2)
+    with col_fluxo:
+        dados_fluxo = pd.DataFrame(
+            {
+                "Tipo": ["Entrou", "Saiu"],
+                "Valor": [resumo["total_receitas"], resumo["total_geral_gastos"]],
+            }
+        )
+        dados_fluxo["Texto"] = dados_fluxo["Valor"].map(formatar_moeda)
+        if dados_fluxo["Valor"].sum() == 0:
+            st.info("Registre entradas e gastos para comparar o mês.")
+        else:
+            fig = grafico_barras_verticais(
+                dados_fluxo,
+                "Tipo",
+                mapa_cores={"Entrou": "#2f7d59", "Saiu": "#c45f4b"},
+            )
+            st.plotly_chart(fig, width="stretch")
+    with col_saida:
+        dados_saida = pd.DataFrame(
+            {
+                "Grupo": ["Fixos", "Variáveis", "Parcelas"],
+                "Valor": [resumo["total_fixos"], resumo["total_variaveis"], resumo["total_dividas"]],
+            }
+        )
+        if dados_saida["Valor"].sum() == 0:
+            st.info("Adicione gastos para ver a composição da saída.")
+        else:
+            fig = grafico_rosca(dados_saida, "Grupo", cores=["#b7791f", "#2f6f9f", "#c45f4b"])
+            st.plotly_chart(fig, width="stretch")
 
     dividas_backup = dividas if dividas is not None else pd.DataFrame(columns=COLUNAS_DIVIDAS)
     st.download_button(
@@ -1710,59 +2227,128 @@ def exibir_painel(
             for sugestao in sugestoes[:4]:
                 panel_html("Ação rápida", sugestao)
 
-        st.markdown("#### Entrou x saiu")
-        if resumo["total_receitas"] == 0 and resumo["total_geral_gastos"] == 0:
-            st.info("Registre entradas e gastos para comparar o mês.")
-        else:
-            dados = pd.DataFrame({"Tipo": ["Entrou", "Saiu"], "Valor": [resumo["total_receitas"], resumo["total_geral_gastos"]]})
-            dados["Texto"] = dados["Valor"].map(formatar_moeda)
-            fig = px.bar(dados, x="Tipo", y="Valor", text="Texto", color="Tipo", color_discrete_map={"Entrou": "#2f7d59", "Saiu": "#c45f4b"})
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            limpar_grafico(fig)
-            aplicar_eixo_moeda(fig)
-            st.plotly_chart(fig, width="stretch")
-
 def aba_metas(saldo: float) -> dict[str, object]:
-    """Calcula quanto guardar por mês para uma meta."""
-    st.subheader("Meta para guardar dinheiro")
-    st.markdown('<p class="note">Defina um objetivo simples e veja se cabe no dinheiro que sobrou.</p>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 1.4, 1])
+    """Permite acompanhar várias metas de dinheiro guardado."""
+    st.subheader("Metas para guardar dinheiro")
+    st.markdown('<p class="note">Cadastre objetivos diferentes, acompanhe o progresso e escolha qual meta fica em foco na simulação.</p>', unsafe_allow_html=True)
+
+    if "metas_editor_versao" not in st.session_state:
+        st.session_state["metas_editor_versao"] = 0
+
+    metas_base = metas_atuais()
+    st.markdown("#### Cadastro de metas")
+    metas_editadas = st.data_editor(
+        metas_base,
+        hide_index=True,
+        num_rows="dynamic",
+        width="stretch",
+        key=f"metas_editor_{st.session_state['metas_editor_versao']}",
+        column_config={
+            "Objetivo": st.column_config.TextColumn("Objetivo", width="large"),
+            "Valor total": st.column_config.NumberColumn("Valor total", min_value=0.0, step=50.0, format="R$ %.2f"),
+            "Já guardado": st.column_config.NumberColumn("Já guardado", min_value=0.0, step=50.0, format="R$ %.2f"),
+            "Prazo (meses)": st.column_config.NumberColumn("Prazo", min_value=1, max_value=240, step=1),
+            "Prioridade": st.column_config.SelectboxColumn("Prioridade", options=PRIORIDADES_META, required=True),
+        },
+    )
+    metas = normalizar_metas(metas_editadas)
+    st.session_state["metas_df"] = metas
+    sincronizar_meta_legada(metas)
+
+    metas_calculadas = calcular_metas(metas, saldo)
+    if metas_calculadas.empty:
+        empty_state("Sem metas", "Adicione uma linha na tabela para acompanhar reserva de emergência, curso, viagem, compra planejada ou outro objetivo.")
+        return meta_dict_de_linha(None)
+
+    total_alvo = float(metas_calculadas["Valor total"].sum())
+    total_faltante = float(metas_calculadas["Falta"].sum())
+    total_guardado = float((metas_calculadas["Valor total"] - metas_calculadas["Falta"]).clip(lower=0.0).sum())
+    mensal_total = float(metas_calculadas["Guardar por mês"].sum())
+    progresso_total = min((total_guardado / total_alvo) * 100, 100) if total_alvo > 0 else 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        valor_total = dinheiro_input("Quanto quer juntar?", "meta_valor_total")
+        card("Metas ativas", str(len(metas_calculadas)), "Objetivos cadastrados.", "blue")
     with c2:
-        objetivo = st.text_input("Para quê?", key="meta_objetivo", placeholder="Exemplo: emergência, curso, compra planejada")
+        card("Já guardado", formatar_moeda(total_guardado), "Soma do progresso.", "green")
     with c3:
-        prazo = st.number_input("Em quantos meses?", min_value=1, max_value=240, value=int(st.session_state.get("meta_prazo_meses", 6)), step=1, key="meta_prazo_meses")
-
-    mensal = valor_total / prazo if prazo else 0.0
-    cabe = saldo >= mensal and mensal > 0
-
-    if valor_total <= 0 and not objetivo.strip():
-        empty_state("Sem metas", "Crie uma meta simples para acompanhar seu progresso, como reserva de emergência, curso ou compra planejada.")
-
-    if st.button("Salvar meta", width="content"):
-        st.success("Meta salva.")
-
-    c4, c5 = st.columns(2)
+        card("Falta juntar", formatar_moeda(total_faltante), "Valor restante.", "gold" if total_faltante > 0 else "green")
     with c4:
-        card("🎯 Guardar por mês", formatar_moeda(mensal), "Valor necessário para chegar no prazo.", "green")
-    with c5:
-        card("💰 Sobra do mês", formatar_moeda(max(saldo, 0)), "Valor disponível no resultado.", "blue" if saldo > 0 else "gold")
+        cor_mensal = "blue" if saldo >= mensal_total and mensal_total > 0 else "gold"
+        card("Total por mês", formatar_moeda(mensal_total), "Para cumprir todos os prazos.", cor_mensal)
 
-    if valor_total > 0 and not cabe:
-        st.warning("A meta pode ficar mais leve aumentando o prazo ou criando uma folga maior no mês.")
-    elif valor_total > 0 and cabe:
-        st.success("A meta cabe no dinheiro que sobrou. O próximo passo é separar esse valor assim que receber.")
+    st.progress(int(progresso_total), text=f"{formatar_decimal(progresso_total)}% do valor total das metas já foi guardado.")
+    if total_faltante <= 0 and total_alvo > 0:
+        st.success("Todas as metas cadastradas já foram alcançadas.")
+    elif saldo <= 0:
+        st.warning("O mês ainda não tem sobra para financiar as metas. Primeiro tente fechar o resultado no positivo.")
+    elif mensal_total > saldo:
+        st.warning(f"Para cumprir todos os prazos ao mesmo tempo, faltam {formatar_moeda(mensal_total - saldo)} por mês.")
+    else:
+        st.success("As metas cabem na sobra do mês considerando os prazos informados.")
 
-    if mensal > 0:
-        dados = pd.DataFrame({"Mês": list(range(1, int(prazo) + 1)), "Dinheiro guardado": [mensal * mes for mes in range(1, int(prazo) + 1)]})
-        fig = px.line(dados, x="Mês", y="Dinheiro guardado", markers=True)
-        fig.update_traces(line_color="#2f6f9f")
-        limpar_grafico(fig, margem=dict(l=10, r=10, t=30, b=10))
-        aplicar_eixo_moeda(fig)
+    st.markdown("#### Meta em foco")
+    opcoes = list(metas_calculadas.index)
+    indice_atual = indice_meta_foco(metas_calculadas) or 0
+    if int(st.session_state.get("meta_foco_select", indice_atual) or 0) not in opcoes:
+        st.session_state["meta_foco_select"] = indice_atual
+    indice_foco = st.selectbox(
+        "Meta em foco",
+        options=opcoes,
+        index=indice_atual,
+        format_func=lambda indice: f"{metas_calculadas.loc[indice, 'Objetivo'] or 'Sem nome'} · {metas_calculadas.loc[indice, 'Prioridade']}",
+        label_visibility="collapsed",
+        key="meta_foco_select",
+    )
+    st.session_state["meta_foco_indice"] = int(indice_foco)
+    sincronizar_meta_legada(metas)
+    linha = metas_calculadas.iloc[int(indice_foco)]
+    meta = meta_dict_de_linha(linha)
+
+    foco1, foco2, foco3 = st.columns(3)
+    with foco1:
+        card("Falta nessa meta", formatar_moeda(float(linha["Falta"])), "Valor restante do objetivo.", "gold" if linha["Falta"] > 0 else "green")
+    with foco2:
+        card("Guardar por mês", formatar_moeda(float(linha["Guardar por mês"])), "Ritmo para o prazo escolhido.", "blue")
+    with foco3:
+        card("Situação", str(linha["Situação"]), f"{formatar_decimal(float(linha['Progresso']))}% concluída.", "green" if linha["Situação"] in ["Cabe", "Concluída"] else "gold")
+
+    if linha["Situação"] == "Ajustar" and int(linha["Prazo sugerido"]) > int(linha["Prazo (meses)"]):
+        st.info(f"Com a sobra atual, essa meta fica mais realista em cerca de {int(linha['Prazo sugerido'])} meses.")
+
+    st.markdown("#### Visual da meta em foco")
+    col_comparacao, col_evolucao = st.columns([1, 1.25])
+    with col_comparacao:
+        dados_comparacao = pd.DataFrame(
+            {
+                "Referência": ["Guardar por mês", "Sobra do mês", "Todas as metas"],
+                "Valor": [float(linha["Guardar por mês"]), max(float(saldo), 0.0), mensal_total],
+            }
+        )
+        dados_comparacao["Texto"] = dados_comparacao["Valor"].map(formatar_moeda)
+        fig = grafico_barras_horizontais(dados_comparacao, "Referência", ["#2f7d59", "#2f6f9f", "#b7791f"])
+        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        st.plotly_chart(fig, width="stretch")
+    with col_evolucao:
+        prazo = int(linha["Prazo (meses)"])
+        mensal = float(linha["Guardar por mês"])
+        valor_total = float(linha["Valor total"])
+        valor_guardado = float(linha["Já guardado"])
+        dados_evolucao = pd.DataFrame(
+            {
+                "Mês": list(range(0, prazo + 1)),
+                "Dinheiro guardado": [min(valor_guardado + mensal * mes, valor_total) for mes in range(0, prazo + 1)],
+            }
+        )
+        fig = grafico_linha_moeda(dados_evolucao, "Mês", "Dinheiro guardado")
+        if valor_total > 0:
+            fig.add_hline(y=valor_total, line_dash="dash", line_color="#b7791f")
         st.plotly_chart(fig, width="stretch")
 
-    return {"objetivo": objetivo, "valor_total": valor_total, "prazo_meses": int(prazo), "valor_mensal_necessario": mensal, "situacao": "Sim" if cabe else "Não"}
+    with st.expander("Ver todas as metas calculadas"):
+        st.dataframe(formatar_tabela_metas(metas_calculadas), hide_index=True, width="stretch")
+
+    return meta
 
 
 def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
@@ -1777,6 +2363,13 @@ def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
 
     referencia_aa = float(taxas["selic_aa"])
     tr_mensal = float(taxas["tr_mensal"])
+
+    if "sim_valor_inicial" not in st.session_state:
+        st.session_state["sim_valor_inicial"] = float(meta.get("valor_guardado", 0.0) or 0.0)
+    if "sim_valor_mensal" not in st.session_state:
+        st.session_state["sim_valor_mensal"] = float(meta.get("valor_mensal_necessario", 0.0) or 0.0)
+    if meta.get("objetivo"):
+        panel_html("Meta em foco", f"{meta['objetivo']} · falta {formatar_moeda(float(meta.get('faltante', 0.0)))}")
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -1810,6 +2403,31 @@ def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
     if diferenca > 0:
         st.success(f"A diferença estimada entre deixar parado e aplicar de forma simples é de {formatar_moeda(diferenca)} no período.")
 
+    if not tabela.empty:
+        st.markdown("#### Evolução dos cenários")
+        evolucao = tabela.melt(
+            id_vars="Mês",
+            value_vars=["Dinheiro parado", "Poupança", "Aplicação simples"],
+            var_name="Cenário",
+            value_name="Valor",
+        )
+        fig = px.line(
+            evolucao,
+            x="Mês",
+            y="Valor",
+            color="Cenário",
+            markers=True,
+            color_discrete_map={
+                "Dinheiro parado": "#2f7d59",
+                "Poupança": "#2f6f9f",
+                "Aplicação simples": "#b7791f",
+            },
+        )
+        limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
+        aplicar_eixo_moeda(fig)
+        st.plotly_chart(fig, width="stretch")
+
+    st.markdown("#### Comparação final")
     dados = pd.DataFrame(
         {
             "Cenário": ["Dinheiro parado", "Poupança", "Aplicação simples"],
@@ -1849,8 +2467,10 @@ def montar_resumo_exportacao(resumo: dict[str, float], resumo_final: dict[str, o
             "Meta",
             f"Objetivo: {meta['objetivo'] or 'Não informado'}",
             f"Valor desejado: {formatar_moeda(float(meta['valor_total']))}",
+            f"Já guardado: {formatar_moeda(float(meta.get('valor_guardado', 0.0)))}",
+            f"Falta juntar: {formatar_moeda(float(meta.get('faltante', 0.0)))}",
             f"Guardar por mês: {formatar_moeda(float(meta['valor_mensal_necessario']))}",
-            f"Cabe agora? {meta['situacao']}",
+            f"Situação: {meta['situacao']}",
             "",
             "Guardando dinheiro",
             f"Total guardado: {formatar_moeda(float(simulacao['final']['Total guardado']))}",
@@ -1994,8 +2614,9 @@ def exportar_pdf_resumo(
         "",
         "Meta",
         f"Objetivo: {meta['objetivo'] or 'Não informado'}",
+        f"Falta juntar: {formatar_moeda(float(meta.get('faltante', 0.0)))}",
         f"Guardar por mês: {formatar_moeda(float(meta['valor_mensal_necessario']))}",
-        f"Cabe agora? {meta['situacao']}",
+        f"Situação: {meta['situacao']}",
         "",
         "Guardando dinheiro",
         f"Total guardado previsto: {formatar_moeda(float(simulacao['final']['Total guardado']))}",
@@ -2060,6 +2681,7 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
     arquivo = BytesIO()
     historico = gerar_relatorio_anual(lancamentos, anos_historico_exportacao(lancamentos))
     historico_simples = historico["mensal"].drop(columns=["Mês nº"], errors="ignore")
+    metas_exportacao = calcular_metas(metas_atuais(), resumo["saldo_final"])
     with pd.ExcelWriter(arquivo, engine="openpyxl") as writer:
         pd.DataFrame({"Gerado em": [datetime.now().strftime("%d/%m/%Y %H:%M")], "App": [DISPLAY_NAME]}).to_excel(writer, index=False, sheet_name="Inicio")
         lancamentos.to_excel(writer, index=False, sheet_name="Lancamentos")
@@ -2075,6 +2697,7 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
             ]
         ).to_excel(writer, index=False, sheet_name="Resumo")
         pd.DataFrame([meta]).to_excel(writer, index=False, sheet_name="Meta")
+        metas_exportacao.to_excel(writer, index=False, sheet_name="Metas")
         pd.DataFrame([obter_configuracoes_backup()]).to_excel(writer, index=False, sheet_name="Configuracoes")
         historico_simples.to_excel(writer, index=False, sheet_name="Historico")
         pd.DataFrame({"Sugestão": sugestoes}).to_excel(writer, index=False, sheet_name="Sugestoes")
@@ -2084,8 +2707,9 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
         aplicar_formato_excel(writer, "Lancamentos", ["Valor"], FORMATO_MOEDA_EXCEL)
         aplicar_formato_excel(writer, "Lancamentos", ["Data"], FORMATO_DATA_EXCEL)
         aplicar_formato_excel(writer, "Dividas", ["Falta pagar", "Parcela do mês"], FORMATO_MOEDA_EXCEL)
-        aplicar_formato_excel(writer, "Meta", ["valor_total", "valor_mensal_necessario"], FORMATO_MOEDA_EXCEL)
-        aplicar_formato_excel(writer, "Configuracoes", ["meta_valor_total", "sim_valor_inicial", "sim_valor_mensal"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Meta", ["valor_total", "valor_guardado", "faltante", "valor_mensal_necessario"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Metas", ["Valor total", "Já guardado", "Falta", "Guardar por mês", "Folga após guardar"], FORMATO_MOEDA_EXCEL)
+        aplicar_formato_excel(writer, "Configuracoes", ["meta_valor_total", "meta_valor_guardado", "sim_valor_inicial", "sim_valor_mensal"], FORMATO_MOEDA_EXCEL)
         aplicar_formato_excel(writer, "Historico", COLUNAS_RESUMO_ANUAL, FORMATO_MOEDA_EXCEL)
         colunas_guardando = [coluna for coluna in simulacao["tabela"].columns if coluna != "Mês"]
         aplicar_formato_excel(writer, "Guardando", colunas_guardando, FORMATO_MOEDA_EXCEL)
@@ -2190,11 +2814,57 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
 
     dados_grafico = historico_anual["mensal"].copy()
     dados_grafico["Período"] = dados_grafico["Mês"].astype(str) + "/" + dados_grafico["Ano"].astype(str)
-    fig = px.line(dados_grafico, x="Período", y="Sobrou/Faltou", markers=True)
-    fig.update_traces(line_color="#2f6f9f")
-    limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
-    aplicar_eixo_moeda(fig)
-    st.plotly_chart(fig, width="stretch")
+    col_saldo, col_movimento = st.columns(2)
+    with col_saldo:
+        st.markdown("#### Saldo mês a mês")
+        fig = grafico_linha_moeda(dados_grafico, "Período", "Sobrou/Faltou")
+        st.plotly_chart(fig, width="stretch")
+    with col_movimento:
+        st.markdown("#### Entradas x gastos")
+        movimento = dados_grafico.melt(
+            id_vars="Período",
+            value_vars=["Entradas", "Total de gastos"],
+            var_name="Tipo",
+            value_name="Valor",
+        )
+        movimento["Texto"] = movimento["Valor"].map(formatar_moeda)
+        fig = px.bar(
+            movimento,
+            x="Período",
+            y="Valor",
+            color="Tipo",
+            text="Texto",
+            barmode="group",
+            color_discrete_map={"Entradas": "#2f7d59", "Total de gastos": "#c45f4b"},
+        )
+        fig.update_traces(textposition="outside", cliponaxis=False)
+        limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
+        aplicar_eixo_moeda(fig)
+        fig.update_xaxes(tickangle=-35)
+        st.plotly_chart(fig, width="stretch")
+
+    if len(totais_ano) > 1:
+        st.markdown("#### Total por ano")
+        totais_grafico = totais_ano.melt(
+            id_vars="Ano",
+            value_vars=["Entradas", "Total de gastos", "Sobrou/Faltou"],
+            var_name="Indicador",
+            value_name="Valor",
+        )
+        totais_grafico["Texto"] = totais_grafico["Valor"].map(formatar_moeda)
+        fig = px.bar(
+            totais_grafico,
+            x="Ano",
+            y="Valor",
+            color="Indicador",
+            text="Texto",
+            barmode="group",
+            color_discrete_map={"Entradas": "#2f7d59", "Total de gastos": "#c45f4b", "Sobrou/Faltou": "#2f6f9f"},
+        )
+        fig.update_traces(textposition="outside", cliponaxis=False)
+        limpar_grafico(fig, margem=dict(l=10, r=10, t=20, b=10))
+        aplicar_eixo_moeda(fig)
+        st.plotly_chart(fig, width="stretch")
 
     with st.expander("Resumo mês a mês"):
         tabela_mensal = historico_anual["mensal"].drop(columns=["Mês nº"])
@@ -2218,6 +2888,13 @@ def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict
         if parceladas.empty:
             st.info("Nenhuma compra parcelada encontrada nos anos selecionados.")
         else:
+            parceladas_grafico = parceladas.copy()
+            parceladas_grafico["Item"] = parceladas_grafico["Descrição"].replace("", pd.NA).fillna(parceladas_grafico["Categoria"]).astype(str)
+            parceladas_grafico = parceladas_grafico.groupby("Item", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
+            parceladas_grafico["Texto"] = parceladas_grafico["Valor"].map(formatar_moeda)
+            fig = grafico_barras_horizontais(parceladas_grafico, "Item", ["#b7791f", "#2f6f9f", "#c45f4b", "#2f7d59"])
+            fig.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig, width="stretch")
             tabela_parceladas = parceladas.copy()
             tabela_parceladas["Valor"] = tabela_parceladas["Valor"].map(formatar_moeda)
             st.dataframe(tabela_parceladas, hide_index=True, width="stretch")
@@ -2295,7 +2972,7 @@ Em caso de dúvidas relacionadas ao funcionamento do aplicativo ou privacidade d
 
 def barra_lateral(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
     """Monta os botões fixos da barra lateral."""
-    st.sidebar.title("Organização")
+    logo_barra_lateral()
     st.sidebar.caption("Controle simples do mês.")
     st.sidebar.divider()
     if st.sidebar.button("Novo lançamento", width="stretch"):
@@ -2409,7 +3086,7 @@ def main() -> None:
 
     barra_lateral(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes)
 
-    st.caption("As comparações possuem caráter informativo.")
+    rodape_institucional()
 
 
 if __name__ == "__main__":
