@@ -677,7 +677,7 @@ def limpar_grafico(
 
 def mostrar_grafico(fig) -> None:
     """Mostra gráficos Plotly sem barra de ferramentas visível."""
-    st.plotly_chart(fig, width="stretch", config=CONFIG_GRAFICO)
+    st.plotly_chart(fig, use_container_width=True, config=CONFIG_GRAFICO)
 
 
 def grafico_barras_horizontais(
