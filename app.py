@@ -11,12 +11,7 @@ import streamlit as st
 
 DISPLAY_NAME = "Organização Financeira na Prática"
 BCB_BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs"
-CACHE_TAXAS_BCB = "bcb-parser-v2"
-TESOURO_CSV_URL = (
-    "https://www.tesourotransparente.gov.br/ckan/dataset/"
-    "df56aa42-484a-4a59-8184-7676580c81e3/resource/"
-    "796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
-)
+CACHE_TAXAS_BCB = "bcb-parser-v3"
 
 TIPOS_LANCAMENTO = ["Entrada", "Gasto"]
 CATEGORIAS_ENTRADA = ["Salário", "Horas extras", "Benefícios", "Venda ou bico", "Ajuda recebida", "Outros ganhos"]
@@ -37,6 +32,42 @@ CATEGORIAS_GASTO = [
     "Outros gastos",
 ]
 CATEGORIAS_LANCAMENTO = CATEGORIAS_ENTRADA + CATEGORIAS_GASTO
+COLUNAS_LANCAMENTOS = [
+    "Data",
+    "Tipo",
+    "Descrição",
+    "Categoria",
+    "Valor",
+    "Fixo",
+    "Início",
+    "Fim",
+    "Parcelado",
+    "Nº de parcelas",
+    "Parcelas pagas",
+    "Observação",
+]
+COLUNAS_LANCAMENTOS_BASICAS = ["Data", "Tipo", "Descrição", "Categoria", "Valor"]
+COLUNAS_LANCAMENTOS_DETALHES = ["Fixo", "Início", "Fim", "Parcelado", "Nº de parcelas", "Parcelas pagas", "Observação"]
+ICONE_CATEGORIA = {
+    "Salário": "💰",
+    "Horas extras": "💰",
+    "Benefícios": "💰",
+    "Venda ou bico": "💰",
+    "Ajuda recebida": "💰",
+    "Moradia": "🏠",
+    "Mercado e alimentação": "🛒",
+    "Água, luz e internet": "💡",
+    "Transporte": "🚌",
+    "Saúde": "🩺",
+    "Educação": "📚",
+    "Lazer": "🎟️",
+    "Delivery ou lanche fora": "🍔",
+    "Compras": "🛍️",
+    "Cartão de crédito": "💳",
+    "Assinaturas": "🔁",
+    "Dívidas": "⚠️",
+    "Imprevistos": "⚠️",
+}
 MESES_PT = {
     1: "Janeiro",
     2: "Fevereiro",
@@ -68,10 +99,12 @@ def formatar_data(valor: object) -> str:
     return data.strftime("%d/%m/%Y")
 
 
-def formatar_tabela_lancamentos(lancamentos: pd.DataFrame) -> pd.DataFrame:
+def formatar_tabela_lancamentos(lancamentos: pd.DataFrame, colunas: list[str] | None = None) -> pd.DataFrame:
     tabela = lancamentos.copy()
     if tabela.empty:
         return tabela
+    if colunas is not None:
+        tabela = tabela[[coluna for coluna in colunas if coluna in tabela.columns]].copy()
     for coluna_data in ["Data", "Início", "Fim"]:
         if coluna_data in tabela.columns:
             tabela[coluna_data] = tabela[coluna_data].map(formatar_data)
@@ -127,16 +160,6 @@ def dinheiro_input(rotulo: str, chave: str, valor: float = 0.0, ajuda: str | Non
     return st.number_input(rotulo, min_value=0.0, value=float(valor), step=50.0, format="%.2f", key=chave, help=ajuda)
 
 
-def numero_br(valor: object) -> float:
-    if pd.isna(valor):
-        return 0.0
-    texto = str(valor).strip().replace(".", "").replace(",", ".")
-    try:
-        return float(texto)
-    except ValueError:
-        return 0.0
-
-
 def numero_bcb(valor: object) -> float:
     if pd.isna(valor):
         return 0.0
@@ -146,6 +169,10 @@ def numero_bcb(valor: object) -> float:
 def normalizar_percentual_atual(valor: float) -> float:
     """Evita exibir valor inflado se algum cache antigo trouxe 14.50 como 1450."""
     return valor / 100 if valor > 100 else valor
+
+
+def icone_categoria(categoria: str) -> str:
+    return ICONE_CATEGORIA.get(categoria, "•")
 
 
 def configurar_pagina() -> None:
@@ -165,13 +192,13 @@ def configurar_pagina() -> None:
             --gold: #b7791f;
         }
         .stApp { background: var(--bg); }
-        .main .block-container { max-width: 1220px; padding-top: 1.1rem; padding-bottom: 3rem; }
+        .main .block-container { max-width: 1120px; padding-top: 1.1rem; padding-bottom: 3rem; }
         h1, h2, h3 { color: var(--ink); letter-spacing: 0; }
         .hero {
             background: var(--panel);
             border: 1px solid var(--line);
             border-left: 7px solid var(--green);
-            border-radius: 18px;
+            border-radius: 8px;
             padding: 1.25rem 1.35rem;
             box-shadow: 0 12px 30px rgba(23, 32, 38, .06);
             margin-bottom: 1rem;
@@ -191,18 +218,18 @@ def configurar_pagina() -> None:
         .metric-card {
             background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 14px;
-            min-height: 124px;
-            padding: .95rem;
+            border-radius: 8px;
+            min-height: 148px;
+            padding: 1.15rem;
             box-shadow: 0 8px 22px rgba(23, 32, 38, .055);
         }
         .metric-card.green { border-top: 5px solid var(--green); }
         .metric-card.blue { border-top: 5px solid var(--blue); }
         .metric-card.red { border-top: 5px solid var(--red); }
         .metric-card.gold { border-top: 5px solid var(--gold); }
-        .metric-label { color: var(--muted); font-size: .86rem; margin-bottom: .35rem; }
-        .metric-value { color: var(--ink); font-size: clamp(1.15rem, 2vw, 1.58rem); font-weight: 780; line-height: 1.15; }
-        .metric-help { color: var(--muted); font-size: .82rem; margin-top: .42rem; }
+        .metric-label { color: var(--muted); font-size: .92rem; margin-bottom: .5rem; }
+        .metric-value { color: var(--ink); font-size: clamp(1.22rem, 2vw, 1.72rem); font-weight: 780; line-height: 1.15; }
+        .metric-help { color: var(--muted); font-size: .88rem; margin-top: .55rem; line-height: 1.35; }
         .note {
             color: var(--muted);
             font-size: .95rem;
@@ -212,20 +239,20 @@ def configurar_pagina() -> None:
         .panel {
             background: var(--panel);
             border: 1px solid var(--line);
-            border-radius: 14px;
-            padding: 1rem;
-            margin: .55rem 0;
+            border-radius: 8px;
+            padding: 1.05rem 1.1rem;
+            margin: .65rem 0;
         }
         .total-line {
             background: #f0f6f8;
             border: 1px solid #d8e7ee;
-            border-radius: 12px;
+            border-radius: 8px;
             color: #264653;
             font-weight: 740;
             margin-top: .65rem;
             padding: .7rem .85rem;
         }
-        div[data-testid="stAlert"] { border-radius: 13px; }
+        div[data-testid="stAlert"] { border-radius: 8px; }
         .stTabs [data-baseweb="tab-list"] { gap: .35rem; flex-wrap: wrap; }
         .stTabs [data-baseweb="tab"] {
             background: #ffffff;
@@ -281,30 +308,19 @@ def buscar_serie_bcb(codigo: int, ultimos: int = 1) -> list[dict[str, object]]:
     return [{"data": item["data"], "valor": numero_bcb(item["valor"]), "url": url} for item in dados]
 
 
-def acumular_percentuais(valores: list[float]) -> float:
-    fator = 1.0
-    for valor in valores:
-        fator *= 1 + valor / 100
-    return (fator - 1) * 100
-
-
 @st.cache_data(ttl=60 * 60)
 def obter_taxas_bcb(_cache_version: str = CACHE_TAXAS_BCB) -> dict[str, object]:
     try:
         selic = buscar_serie_bcb(432)[-1]
         tr = buscar_serie_bcb(226)[-1]
-        ipca_serie = buscar_serie_bcb(433, 12)
         selic_aa = normalizar_percentual_atual(float(selic["valor"]))
         tr_mensal = normalizar_percentual_atual(float(tr["valor"]))
-        ipca_12m = normalizar_percentual_atual(acumular_percentuais([float(item["valor"]) for item in ipca_serie]))
         return {
             "ok": True,
             "selic_aa": selic_aa,
             "selic_data": selic["data"],
             "tr_mensal": tr_mensal,
             "tr_data": tr["data"],
-            "ipca_12m": ipca_12m,
-            "ipca_data": ipca_serie[-1]["data"],
         }
     except (URLError, TimeoutError, ValueError, json.JSONDecodeError) as erro:
         return {
@@ -314,44 +330,7 @@ def obter_taxas_bcb(_cache_version: str = CACHE_TAXAS_BCB) -> dict[str, object]:
             "selic_data": "manual",
             "tr_mensal": 0.0,
             "tr_data": "manual",
-            "ipca_12m": 4.0,
-            "ipca_data": "manual",
         }
-
-
-@st.cache_data(ttl=60 * 60 * 6)
-def obter_titulos_tesouro() -> dict[str, object]:
-    try:
-        df = pd.read_csv(TESOURO_CSV_URL, sep=";", encoding="latin1")
-        df["Data Base Dt"] = pd.to_datetime(df["Data Base"], dayfirst=True, errors="coerce")
-        df["Data Vencimento Dt"] = pd.to_datetime(df["Data Vencimento"], dayfirst=True, errors="coerce")
-        data_base = df["Data Base Dt"].max()
-        df = df[df["Data Base Dt"] == data_base].copy()
-        df = df[df["Tipo Titulo"].isin(["Tesouro Selic", "Tesouro Prefixado", "Tesouro IPCA+"])]
-        for coluna in ["Taxa Compra Manha", "Taxa Venda Manha", "PU Compra Manha", "PU Venda Manha"]:
-            df[coluna] = df[coluna].map(numero_br)
-        df = df.sort_values(["Tipo Titulo", "Data Vencimento Dt"])
-
-        titulos = []
-        for _, linha in df.iterrows():
-            ano = int(linha["Data Vencimento Dt"].year) if pd.notna(linha["Data Vencimento Dt"]) else ""
-            titulos.append(
-                {
-                    "tipo": linha["Tipo Titulo"],
-                    "nome": f"{linha['Tipo Titulo']} {ano}",
-                    "vencimento": linha["Data Vencimento"],
-                    "taxa": float(linha["Taxa Compra Manha"]),
-                    "preco": float(linha["PU Compra Manha"]),
-                }
-            )
-        return {
-            "ok": True,
-            "data_base": data_base.strftime("%d/%m/%Y") if pd.notna(data_base) else "",
-            "titulos": titulos,
-            "url": TESOURO_CSV_URL,
-        }
-    except Exception as erro:
-        return {"ok": False, "erro": str(erro), "data_base": "manual", "titulos": [], "url": TESOURO_CSV_URL}
 
 
 def criar_lancamentos_padrao() -> pd.DataFrame:
@@ -403,21 +382,26 @@ def criar_lancamentos_padrao() -> pd.DataFrame:
     )
 
 
+def criar_lancamento_vazio(tipo: str = "Gasto") -> dict[str, object]:
+    categoria = "Outros ganhos" if tipo == "Entrada" else "Outros gastos"
+    return {
+        "Data": date.today(),
+        "Tipo": tipo,
+        "Descrição": "",
+        "Categoria": categoria,
+        "Valor": 0.0,
+        "Fixo": False,
+        "Início": None,
+        "Fim": None,
+        "Parcelado": False,
+        "Nº de parcelas": 1,
+        "Parcelas pagas": 0,
+        "Observação": "",
+    }
+
+
 def normalizar_lancamentos(df: pd.DataFrame) -> pd.DataFrame:
-    colunas = [
-        "Data",
-        "Tipo",
-        "Descrição",
-        "Categoria",
-        "Valor",
-        "Fixo",
-        "Início",
-        "Fim",
-        "Parcelado",
-        "Nº de parcelas",
-        "Parcelas pagas",
-        "Observação",
-    ]
+    colunas = COLUNAS_LANCAMENTOS
     if df is None or df.empty:
         return pd.DataFrame(columns=colunas)
     dados = df.copy()
@@ -526,7 +510,6 @@ def gerar_resumo(total_receitas: float, total_fixos: float, total_variaveis: flo
         "saldo_final": saldo,
         "percentual_comprometido": usado,
         "percentual_sobrou": sobrou,
-        "valor_usado_a_cada_100": min(usado, 999.0),
     }
 
 
@@ -538,44 +521,83 @@ def gerar_diagnostico(resumo: dict[str, float]) -> list[dict[str, str]]:
     parte_dividas = total_dividas / total_receitas * 100 if total_receitas > 0 else 0.0
 
     if total_receitas == 0 and total_gastos == 0:
-        return [{"tipo": "info", "titulo": "Comece pelos lançamentos", "texto": "Registre pelo menos uma entrada e um gasto.", "acao": "Use valores aproximados para começar."}]
+        return [{"tipo": "info", "titulo": "Comece registrando", "texto": "Inclua uma entrada e os principais gastos.", "acao": "Valores aproximados já ajudam."}]
 
     mensagens = []
     if saldo < 0:
-        mensagens.append({"tipo": "erro", "titulo": "Saiu mais do que entrou", "texto": "O mês fechou no aperto.", "acao": "Escolha um gasto para reduzir antes do próximo pagamento."})
+        mensagens.append({"tipo": "erro", "titulo": "Saiu mais do que entrou", "texto": "O mês fechou negativo.", "acao": "Reduza uma categoria antes do próximo pagamento."})
     elif saldo == 0:
-        mensagens.append({"tipo": "aviso", "titulo": "O mês ficou no limite", "texto": "Tudo que entrou já tem destino.", "acao": "Tente criar uma folga pequena."})
+        mensagens.append({"tipo": "aviso", "titulo": "Mês no limite", "texto": "Tudo que entrou já tem destino.", "acao": "Crie uma folga pequena."})
     else:
-        mensagens.append({"tipo": "sucesso", "titulo": "Terminou com dinheiro sobrando", "texto": "Sobrou dinheiro depois dos gastos.", "acao": "Separe uma parte antes de gastar sem perceber."})
+        mensagens.append({"tipo": "sucesso", "titulo": "Sobrou dinheiro", "texto": "O mês terminou positivo.", "acao": "Separe uma parte da sobra."})
 
     if parte_dividas >= 30:
-        mensagens.append({"tipo": "aviso", "titulo": "Parcelas pesadas", "texto": "As dívidas estão levando uma parte importante do mês.", "acao": "Evite nova parcela antes de entender se cabe."})
+        mensagens.append({"tipo": "aviso", "titulo": "Parcelas altas", "texto": "As parcelas pesaram este mês.", "acao": "Evite novas compras parceladas."})
 
     if saldo <= 0:
-        mensagens.append({"tipo": "info", "titulo": "Primeiro organizar", "texto": "Antes de pensar em investir, o ideal é organizar o dinheiro do mês.", "acao": "O primeiro objetivo é parar de fechar no aperto."})
+        mensagens.append({"tipo": "info", "titulo": "Prioridade do mês", "texto": "Ajuste gastos antes de criar novas metas.", "acao": "Busque fechar sem faltar dinheiro."})
     else:
-        mensagens.append({"tipo": "info", "titulo": "Próximo passo", "texto": "Você pode criar ou reforçar um dinheiro guardado para emergência.", "acao": "Comece com um valor pequeno e constante."})
+        mensagens.append({"tipo": "info", "titulo": "Próximo passo", "texto": "A sobra pode virar dinheiro guardado.", "acao": "Comece com um valor pequeno."})
     return mensagens
 
 
-def gerar_plano_acao(resumo: dict[str, float], lancamentos: pd.DataFrame) -> list[str]:
+def gerar_sugestoes_rapidas(resumo: dict[str, float], lancamentos: pd.DataFrame) -> list[str]:
     if resumo["total_receitas"] == 0:
-        return ["Registrar o dinheiro que entra no mês.", "Registrar os gastos conforme eles acontecem.", "Voltar ao painel depois de preencher alguns lançamentos."]
+        return ["Registre o dinheiro que entra no mês.", "Adicione os principais gastos.", "Volte ao resultado depois dos primeiros lançamentos."]
 
-    plano = []
+    sugestoes = []
     if resumo["saldo_final"] < 0:
-        plano.extend(["Revisar os gastos não fixos primeiro.", "Evitar nova parcela até o mês fechar sem faltar dinheiro.", "Anotar gastos pequenos por 7 dias."])
+        sugestoes.extend(["Revise os gastos não fixos primeiro.", "Evite nova parcela até o mês fechar positivo.", "Anote gastos pequenos por 7 dias."])
     elif resumo["saldo_final"] == 0:
-        plano.extend(["Tentar abrir uma pequena folga no mês.", "Rever assinaturas, delivery e compras não planejadas.", "Separar o dinheiro das contas fixas assim que receber."])
+        sugestoes.extend(["Abra uma pequena folga no mês.", "Reveja assinaturas, delivery e compras não planejadas.", "Separe o dinheiro das contas fixas ao receber."])
     else:
-        plano.extend(["Separar uma parte do que sobrou.", "Guardar um valor para emergência.", "Acompanhar por 3 meses para perceber o padrão."])
+        sugestoes.extend(["Separe uma parte do que sobrou.", "Guarde um valor para emergência.", "Acompanhe por 3 meses para perceber o padrão."])
 
     gastos = lancamentos[lancamentos["Tipo"] == "Gasto"] if not lancamentos.empty else pd.DataFrame()
     if not gastos.empty:
         maior = gastos.groupby("Categoria")["Valor"].sum().sort_values(ascending=False)
         if not maior.empty:
-            plano.append(f"Olhar com carinho para a categoria que mais pesou: {maior.index[0]}.")
-    return plano
+            sugestoes.append(f"Revise {maior.index[0].lower()}, a categoria que mais pesou.")
+    return sugestoes
+
+
+def principal_categoria_gasto(lancamentos: pd.DataFrame) -> tuple[str, float]:
+    gastos = lancamentos[lancamentos["Tipo"] == "Gasto"] if not lancamentos.empty else pd.DataFrame()
+    if gastos.empty:
+        return "Ainda não registrada", 0.0
+    por_categoria = gastos.groupby("Categoria")["Valor"].sum().sort_values(ascending=False)
+    if por_categoria.empty:
+        return "Ainda não registrada", 0.0
+    return str(por_categoria.index[0]), float(por_categoria.iloc[0])
+
+
+def gerar_resumo_financeiro_mes(resumo: dict[str, float], lancamentos: pd.DataFrame) -> dict[str, object]:
+    categoria, valor_categoria = principal_categoria_gasto(lancamentos)
+    saldo = resumo["saldo_final"]
+    total_receitas = resumo["total_receitas"]
+    parte_dividas = resumo["total_dividas"] / total_receitas * 100 if total_receitas > 0 else 0.0
+
+    if total_receitas == 0:
+        recomendacao = "Comece registrando uma entrada, como salário, ajuda recebida ou venda feita no mês."
+    elif saldo < 0:
+        recomendacao = f"{categoria} foi a categoria que mais pesou. Procure uma redução pequena para o próximo mês."
+    elif parte_dividas >= 20:
+        recomendacao = "As parcelas estão ocupando uma parte importante do mês. Evite nova compra parcelada antes de reorganizar o orçamento."
+    elif categoria in ["Delivery ou lanche fora", "Lazer", "Compras", "Assinaturas"]:
+        recomendacao = f"Você gastou mais com {categoria.lower()}. Pequenas reduções podem ajudar a formar uma reserva financeira."
+    elif saldo > 0:
+        recomendacao = "O mês terminou com sobra. Separar uma parte logo ao receber ajuda a transformar sobra em hábito."
+    else:
+        recomendacao = "O mês ficou no limite. Tente criar uma folga pequena antes de assumir novos gastos."
+
+    return {
+        "entrou": resumo["total_receitas"],
+        "saiu": resumo["total_geral_gastos"],
+        "categoria": categoria,
+        "valor_categoria": valor_categoria,
+        "saldo": saldo,
+        "recomendacao": recomendacao,
+    }
 
 
 def preparar_lancamentos_ano(lancamentos: pd.DataFrame) -> pd.DataFrame:
@@ -738,14 +760,13 @@ def exportar_relatorio_anual_excel(relatorio: dict[str, pd.DataFrame]) -> bytes:
         relatorio["totais_ano"].to_excel(writer, index=False, sheet_name="Totais por ano")
         relatorio["categorias"].to_excel(writer, index=False, sheet_name="Categorias")
         relatorio["parceladas"].to_excel(writer, index=False, sheet_name="Parceladas")
-        relatorio["considerados"].to_excel(writer, index=False, sheet_name="Lancamentos usados")
 
         for planilha in writer.sheets.values():
             for coluna in planilha.columns:
                 maior = max(len(str(celula.value)) if celula.value is not None else 0 for celula in coluna)
                 planilha.column_dimensions[coluna[0].column_letter].width = min(maior + 3, 52)
 
-        for nome_planilha in ["Mes a mes", "Totais por ano", "Categorias", "Parceladas", "Lancamentos usados"]:
+        for nome_planilha in ["Mes a mes", "Totais por ano", "Categorias", "Parceladas"]:
             planilha = writer.sheets[nome_planilha]
             cabecalhos = {celula.value: celula.column_letter for celula in planilha[1]}
             for nome_coluna in ["Entradas", "Gastos fixos", "Gastos não fixos", "Total de gastos", "Sobrou/Faltou", "Valor"]:
@@ -759,31 +780,6 @@ def exportar_relatorio_anual_excel(relatorio: dict[str, pd.DataFrame]) -> bytes:
     return arquivo.getvalue()
 
 
-def aliquota_irrf(meses: int) -> float:
-    dias = meses * 30
-    if dias <= 180:
-        return 0.225
-    if dias <= 360:
-        return 0.20
-    if dias <= 720:
-        return 0.175
-    return 0.15
-
-
-def texto_irrf(meses: int) -> str:
-    dias = meses * 30
-    aliquota = aliquota_irrf(meses)
-    if dias <= 180:
-        faixa = "até 180 dias"
-    elif dias <= 360:
-        faixa = "de 181 a 360 dias"
-    elif dias <= 720:
-        faixa = "de 361 a 720 dias"
-    else:
-        faixa = "acima de 720 dias"
-    return f"{formatar_decimal(aliquota * 100)}% ({faixa})"
-
-
 def taxa_mensal_anual(taxa_aa: float) -> float:
     return (1 + taxa_aa / 100) ** (1 / 12) - 1
 
@@ -791,17 +787,11 @@ def taxa_mensal_anual(taxa_aa: float) -> float:
 def taxa_poupanca_mensal(selic_aa: float, tr_mensal: float) -> tuple[float, str]:
     if selic_aa <= 8.5:
         base = taxa_mensal_anual(selic_aa * 0.70)
-        regra = "70% da Selic ao ano, em valor mensal, mais TR"
+        regra = "referência simples da poupança"
     else:
         base = 0.005
-        regra = "0,5% ao mês mais TR"
+        regra = "referência simples da poupança"
     return base + tr_mensal / 100, regra
-
-
-def aplicar_irrf(saldo: float, total_colocado: float, meses: int) -> tuple[float, float]:
-    ganho = max(saldo - total_colocado, 0.0)
-    desconto = ganho * aliquota_irrf(meses)
-    return saldo - desconto, desconto
 
 
 def simular_cenarios(
@@ -810,74 +800,42 @@ def simular_cenarios(
     meses: int,
     selic_aa: float,
     tr_mensal: float,
-    ipca_12m: float,
-    percentual_cdi: float,
-    taxa_selic_tesouro: float,
-    taxa_pre: float,
-    taxa_ipca: float,
-    taxa_extra_aa: float,
 ) -> dict[str, object]:
-    taxa_cdi = taxa_mensal_anual(selic_aa * percentual_cdi / 100)
     taxa_poupanca, regra_poupanca = taxa_poupanca_mensal(selic_aa, tr_mensal)
-    taxa_tesouro_selic = taxa_mensal_anual(max(selic_aa + taxa_selic_tesouro - taxa_extra_aa, 0))
-    taxa_tesouro_pre = taxa_mensal_anual(max(taxa_pre - taxa_extra_aa, 0))
-    taxa_ipca_total = ((1 + ipca_12m / 100) * (1 + taxa_ipca / 100) - 1) * 100
-    taxa_tesouro_ipca = taxa_mensal_anual(max(taxa_ipca_total - taxa_extra_aa, 0))
+    taxa_aplicacao_simples = taxa_mensal_anual(max(selic_aa, 0))
 
     saldos = {
-        "CDI depois do desconto": valor_inicial,
         "Poupança": valor_inicial,
-        "Tesouro Selic depois do desconto": valor_inicial,
-        "Tesouro Prefixado depois do desconto": valor_inicial,
-        "Tesouro IPCA+ depois do desconto": valor_inicial,
+        "Aplicação simples": valor_inicial,
     }
     taxas = {
-        "CDI depois do desconto": taxa_cdi,
         "Poupança": taxa_poupanca,
-        "Tesouro Selic depois do desconto": taxa_tesouro_selic,
-        "Tesouro Prefixado depois do desconto": taxa_tesouro_pre,
-        "Tesouro IPCA+ depois do desconto": taxa_tesouro_ipca,
+        "Aplicação simples": taxa_aplicacao_simples,
     }
 
     total_colocado = valor_inicial
     linhas = []
-    descontos_finais = {}
     for mes in range(1, meses + 1):
         total_colocado += valor_mensal
         linha = {
             "Mês": mes,
-            "Total colocado": total_colocado,
-            "Conta corrente sem rendimento": total_colocado,
+            "Total guardado": total_colocado,
+            "Dinheiro parado": total_colocado,
         }
         for nome, taxa in taxas.items():
             saldos[nome] = (saldos[nome] + valor_mensal) * (1 + taxa)
-            if nome == "Poupança":
-                linha[nome] = saldos[nome]
-                descontos_finais[nome] = 0.0
-            else:
-                liquido, desconto = aplicar_irrf(saldos[nome], total_colocado, mes)
-                linha[nome] = liquido
-                descontos_finais[nome] = desconto
+            linha[nome] = saldos[nome]
         linhas.append(linha)
 
     tabela = pd.DataFrame(linhas)
-    final = tabela.iloc[-1].to_dict() if not tabela.empty else {"Total colocado": valor_inicial}
+    final = tabela.iloc[-1].to_dict() if not tabela.empty else {"Total guardado": valor_inicial}
     return {
         "tabela": tabela,
         "final": final,
-        "descontos": descontos_finais,
         "valor_inicial": valor_inicial,
         "valor_mensal": valor_mensal,
         "meses": meses,
-        "selic_aa": selic_aa,
-        "tr_mensal": tr_mensal,
-        "ipca_12m": ipca_12m,
-        "percentual_cdi": percentual_cdi,
-        "taxa_selic_tesouro": taxa_selic_tesouro,
-        "taxa_pre": taxa_pre,
-        "taxa_ipca": taxa_ipca,
-        "taxa_extra_aa": taxa_extra_aa,
-        "faixa_irrf": texto_irrf(meses),
+        "referencia_aa": selic_aa,
         "regra_poupanca": regra_poupanca,
     }
 
@@ -915,71 +873,91 @@ def tela_inicio() -> None:
         f"""
         <div class="hero">
             <h1>{DISPLAY_NAME}</h1>
-            <p>Um app simples para registrar entradas e gastos, acompanhar o mês, planejar metas e comparar simulações educativas.</p>
-            <p>Não pede dados sensíveis e não recomenda investimentos, bancos, corretoras ou produtos financeiros.</p>
+            <p>Organize entradas, gastos, parcelas e metas em poucos minutos.</p>
+            <p>As comparações possuem caráter informativo.</p>
             <div class="chip-row">
-                <span class="chip">Lançamentos</span>
-                <span class="chip">Painel do mês</span>
-                <span class="chip">Dívidas</span>
+                <span class="chip">Registrar</span>
+                <span class="chip">Resultado do mês</span>
                 <span class="chip">Metas</span>
-                <span class="chip">Simulações educativas</span>
-                <span class="chip">Relatórios</span>
+                <span class="chip">Histórico</span>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        card("Uso diário", "Gasto a gasto", "Registre cada entrada e saída quando acontecer.", "green")
+        card("💰 Entradas", "Anote o que entrou", "Salário, benefício, venda, bico ou ajuda recebida.", "green")
     with c2:
-        card("Leitura fácil", "Entrou x saiu", "Veja rapidamente se sobrou ou faltou dinheiro.", "blue")
+        card("📉 Gastos", "Veja para onde foi", "Mercado, moradia, delivery, transporte e compras.", "red")
+    c3, c4 = st.columns(2)
     with c3:
-        card("Educação", "Sem indicação", "Simulações servem para aprender, não para escolher produto.", "gold")
-    st.info("Comece pela aba Lançamentos. Se quiser demonstrar em sala, use o botão Carregar exemplo na lateral.")
+        card("⚠️ Parcelas", "Controle o mês", "Acompanhe dívidas e compras parceladas sem misturar tudo.", "gold")
+    with c4:
+        card("🎯 Metas", "Guarde com clareza", "Defina um objetivo e veja quanto precisa separar.", "blue")
 
 
 def aba_lancamentos() -> pd.DataFrame:
-    st.subheader("Lançamentos")
+    st.subheader("Registrar")
     st.markdown(
-        '<p class="note">Registre entradas e gastos na mesma tabela. Se algo se repete todo mês, marque Fixo e informe Início e Fim. Se não tiver fim, deixe o campo Fim em branco.</p>',
+        '<p class="note">Adicione entradas e gastos do mês. Use detalhes apenas quando precisar marcar fixos ou parcelas.</p>',
         unsafe_allow_html=True,
     )
 
     if "lancamentos_df" not in st.session_state:
         st.session_state["lancamentos_df"] = criar_lancamentos_padrao()
 
-    if st.button("Adicionar linhas vazias", use_container_width=False):
-        extra = pd.DataFrame(
-            [
-                {
-                    "Data": date.today(),
-                    "Tipo": "Gasto",
-                    "Descrição": "",
-                    "Categoria": "Outros gastos",
-                    "Valor": 0.0,
-                    "Fixo": False,
-                    "Parcelado": False,
-                    "Nº de parcelas": 1,
-                    "Parcelas pagas": 0,
-                    "Observação": "",
-                }
-                for _ in range(5)
-            ]
+    with st.form("lancamento_rapido", clear_on_submit=True):
+        c1, c2, c3, c4, c5 = st.columns([.9, 1.1, 1.6, 1.4, 1])
+        with c1:
+            data_lancamento = st.date_input("Data", value=date.today())
+        with c2:
+            tipo = st.selectbox("Tipo", TIPOS_LANCAMENTO)
+        categorias = CATEGORIAS_ENTRADA if tipo == "Entrada" else CATEGORIAS_GASTO
+        with c3:
+            descricao = st.text_input("Descrição", placeholder="Exemplo: mercado")
+        with c4:
+            categoria = st.selectbox("Categoria", categorias, format_func=lambda item: f"{icone_categoria(item)} {item}")
+        with c5:
+            valor = st.number_input("Valor", min_value=0.0, step=10.0, format="%.2f")
+
+        if st.form_submit_button("Adicionar", width="stretch"):
+            if valor > 0:
+                novo = criar_lancamento_vazio(tipo)
+                novo.update(
+                    {
+                        "Data": data_lancamento,
+                        "Descrição": descricao.strip() or categoria,
+                        "Categoria": categoria,
+                        "Valor": float(valor),
+                    }
+                )
+                st.session_state["lancamentos_df"] = pd.concat([st.session_state["lancamentos_df"], pd.DataFrame([novo])], ignore_index=True)
+                st.rerun()
+            else:
+                st.warning("Informe um valor maior que zero.")
+
+    if st.button("Adicionar linha vazia", width="content"):
+        st.session_state["lancamentos_df"] = pd.concat(
+            [st.session_state["lancamentos_df"], pd.DataFrame([criar_lancamento_vazio()])],
+            ignore_index=True,
         )
-        st.session_state["lancamentos_df"] = pd.concat([st.session_state["lancamentos_df"], extra], ignore_index=True)
         st.rerun()
+
+    mostrar_detalhes = st.toggle("Mostrar detalhes", value=False)
+    colunas_editor = COLUNAS_LANCAMENTOS_BASICAS + (COLUNAS_LANCAMENTOS_DETALHES if mostrar_detalhes else [])
 
     editado = st.data_editor(
         st.session_state["lancamentos_df"],
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
+        column_order=colunas_editor,
         column_config={
             "Data": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
             "Tipo": st.column_config.SelectboxColumn("Tipo", options=TIPOS_LANCAMENTO, required=True),
             "Descrição": st.column_config.TextColumn("Descrição", help="Exemplo: salário, mercado, ônibus"),
-            "Categoria": st.column_config.SelectboxColumn("Categoria", options=CATEGORIAS_LANCAMENTO),
+            "Categoria": st.column_config.SelectboxColumn("Categoria", options=CATEGORIAS_LANCAMENTO, help="Escolha uma categoria simples."),
             "Valor": st.column_config.NumberColumn("Valor (R$)", min_value=0.0, step=1.0, format="%.2f"),
             "Fixo": st.column_config.CheckboxColumn("Fixo"),
             "Início": st.column_config.DateColumn("Início", format="DD/MM/YYYY", help="Use para entradas ou gastos fixos que se repetem todo mês."),
@@ -998,30 +976,32 @@ def aba_lancamentos() -> pd.DataFrame:
     gastos = calcular_gastos(lancamentos)
     total_gastos = gastos["total_fixos"] + gastos["total_variaveis"]
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2 = st.columns(2)
     with c1:
-        card("Entradas registradas", formatar_moeda(entradas), "Dinheiro que entrou", "green")
+        card("💰 Entradas registradas", formatar_moeda(entradas), "Dinheiro que entrou.", "green")
     with c2:
-        card("Gastos registrados", formatar_moeda(total_gastos), "Tudo que saiu nos lançamentos", "red")
+        card("📉 Gastos registrados", formatar_moeda(total_gastos), "Tudo que saiu nos lançamentos.", "red")
+    c3, c4 = st.columns(2)
     with c3:
-        card("Gastos fixos", formatar_moeda(gastos["total_fixos"]), "Marcados como fixos", "gold")
+        card("🏠 Fixos", formatar_moeda(gastos["total_fixos"]), "Marcados como fixos.", "gold")
     with c4:
-        card("Gastos não fixos", formatar_moeda(gastos["total_variaveis"]), "Compras e gastos que variam", "blue")
+        card("🛍️ Variáveis", formatar_moeda(gastos["total_variaveis"]), "Compras e gastos que variam.", "blue")
 
     if not lancamentos.empty:
         st.markdown("#### Resumo por categoria")
         por_categoria = (
             lancamentos.groupby(["Tipo", "Categoria"], as_index=False)["Valor"].sum().sort_values(["Tipo", "Valor"], ascending=[True, False])
         )
+        por_categoria["Categoria"] = por_categoria["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
         tabela = por_categoria.copy()
         tabela["Valor"] = tabela["Valor"].map(formatar_moeda)
-        st.dataframe(tabela, hide_index=True, use_container_width=True)
+        st.dataframe(tabela, hide_index=True, width="stretch")
     return lancamentos
 
 
 def aba_dividas() -> tuple[pd.DataFrame, float]:
     st.subheader("Dívidas e parcelas")
-    st.markdown('<p class="note">Use esta aba para acompanhar parcelas. Não informe contrato, CPF, banco ou dados pessoais.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="note">Acompanhe parcelas do mês usando nomes simples, sem dados pessoais.</p>', unsafe_allow_html=True)
 
     if "dividas_df" not in st.session_state:
         st.session_state["dividas_df"] = criar_dividas_padrao()
@@ -1030,12 +1010,12 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
         "Somar parcelas cadastradas no resultado do mês",
         value=bool(st.session_state.get("somar_dividas", True)),
         key="somar_dividas",
-        help="Se a mesma parcela já foi lançada na aba Lançamentos, deixe desmarcado para não contar duas vezes.",
+        help="Se a mesma parcela já foi lançada em Registrar, deixe desmarcado para não contar duas vezes.",
     )
     editado = st.data_editor(
         st.session_state["dividas_df"],
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Dívida": st.column_config.TextColumn("Dívida", help="Exemplo: cartão, loja, empréstimo"),
@@ -1050,35 +1030,37 @@ def aba_dividas() -> tuple[pd.DataFrame, float]:
     dividas = normalizar_dividas(editado)
     total = calcular_dividas(dividas) if somar else 0.0
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        card("Parcelas do mês", formatar_moeda(calcular_dividas(dividas)), "Soma das parcelas cadastradas", "red")
+        card("⚠️ Parcelas do mês", formatar_moeda(calcular_dividas(dividas)), "Soma das parcelas cadastradas.", "red")
     with c2:
-        card("Contando no painel", formatar_moeda(total), "Valor que entra no resultado", "gold")
+        card("📌 No resultado", formatar_moeda(total), "Valor que entra no resultado do mês.", "gold")
+    c3, _ = st.columns(2)
     with c3:
-        card("Dívidas cadastradas", str(len(dividas)), "Quantidade de linhas preenchidas", "blue")
+        card("🧾 Dívidas cadastradas", str(len(dividas)), "Quantidade de linhas preenchidas.", "blue")
     return dividas, total
 
 
-def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnostico: list[dict[str, str]], plano: list[str]) -> None:
-    st.subheader("Painel do mês")
+def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnostico: list[dict[str, str]], sugestoes: list[str], resumo_final: dict[str, object]) -> None:
+    st.subheader("Resultado do mês")
     saldo = resumo["saldo_final"]
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2 = st.columns(2)
     with c1:
-        card("Entrou", formatar_moeda(resumo["total_receitas"]), "Entradas lançadas", "green")
+        card("💰 Entrou", formatar_moeda(resumo["total_receitas"]), "Entradas lançadas.", "green")
     with c2:
-        card("Saiu", formatar_moeda(resumo["total_geral_gastos"]), "Gastos e parcelas", "red")
+        card("📉 Saiu", formatar_moeda(resumo["total_geral_gastos"]), "Gastos e parcelas.", "red")
+    c3, c4 = st.columns(2)
     with c3:
-        card("Sobrou" if saldo >= 0 else "Faltou", formatar_moeda(abs(saldo)), "Resultado do mês", "blue" if saldo >= 0 else "gold")
+        card("✅ Sobrou" if saldo >= 0 else "⚠️ Faltou", formatar_moeda(abs(saldo)), "Entrou menos saiu.", "blue" if saldo >= 0 else "gold")
     with c4:
-        card("De cada R$ 100", f"R$ {formatar_decimal(resumo['valor_usado_a_cada_100'])}", "Valor que já foi usado", "gold")
+        card("⚠️ Parcelas", formatar_moeda(resumo["total_dividas"]), "Parcelas somadas ao mês.", "gold")
 
     progresso = min(max(resumo["percentual_comprometido"], 0), 100)
-    st.progress(int(progresso), text=f"Uso do dinheiro que entrou: R$ {formatar_decimal(resumo['percentual_comprometido'])} de cada R$ 100.")
+    st.progress(int(progresso), text=f"{formatar_decimal(resumo['percentual_comprometido'])}% do dinheiro que entrou já foi usado.")
 
-    st.markdown("#### Leitura rápida")
+    st.markdown("#### Alertas rápidos")
     for item in diagnostico:
-        texto = f"**{item['titulo']}**\n\n{item['texto']}\n\nPróximo passo: {item['acao']}"
+        texto = f"**{item['titulo']}**  \n{item['texto']} Ação: {item['acao']}"
         if item["tipo"] == "erro":
             st.error(texto)
         elif item["tipo"] == "aviso":
@@ -1088,30 +1070,49 @@ def exibir_painel(resumo: dict[str, float], lancamentos: pd.DataFrame, diagnosti
         else:
             st.info(texto)
 
-    aba1, aba2, aba3 = st.tabs(["Para onde foi", "Entrou x saiu", "Plano de ação"])
-    with aba1:
+    col_grafico, col_sugestoes = st.columns([1.25, 1])
+    with col_grafico:
+        st.markdown("#### Categorias que mais pesaram")
         gastos = lancamentos[lancamentos["Tipo"] == "Gasto"] if not lancamentos.empty else pd.DataFrame()
         if gastos.empty:
             st.info("Registre gastos para ver o gráfico.")
         else:
-            dados = gastos.groupby("Categoria", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False)
+            dados = gastos.groupby("Categoria", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
+            dados["Categoria"] = dados["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
             dados["Texto"] = dados["Valor"].map(formatar_moeda)
-            fig = px.bar(dados, x="Categoria", y="Valor", text="Texto", color="Categoria", color_discrete_sequence=px.colors.qualitative.Set2)
+            fig = px.bar(dados, x="Valor", y="Categoria", text="Texto", orientation="h", color="Categoria", color_discrete_sequence=px.colors.qualitative.Set2)
             fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Valor", margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            aplicar_eixo_moeda(fig)
-            st.plotly_chart(fig, use_container_width=True)
-    with aba2:
+            fig.update_layout(
+                showlegend=False,
+                xaxis_title="",
+                yaxis_title="",
+                yaxis={"categoryorder": "total ascending"},
+                margin=dict(l=10, r=10, t=10, b=10),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
+            fig.update_yaxes(showgrid=False)
+            st.plotly_chart(fig, width="stretch")
+            st.info(f"{resumo_final['categoria']} foi a categoria que mais pesou este mês.")
+    with col_sugestoes:
+        st.markdown("#### Sugestões rápidas")
+        for sugestao in sugestoes[:4]:
+            panel_html("Ação rápida", sugestao)
+
+    st.markdown("#### Entrou x saiu")
+    if resumo["total_receitas"] == 0 and resumo["total_geral_gastos"] == 0:
+        st.info("Registre entradas e gastos para comparar o mês.")
+    else:
         dados = pd.DataFrame({"Tipo": ["Entrou", "Saiu"], "Valor": [resumo["total_receitas"], resumo["total_geral_gastos"]]})
         dados["Texto"] = dados["Valor"].map(formatar_moeda)
         fig = px.bar(dados, x="Tipo", y="Valor", text="Texto", color="Tipo", color_discrete_map={"Entrou": "#2f7d59", "Saiu": "#c45f4b"})
         fig.update_traces(textposition="outside", cliponaxis=False)
-        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="Valor", margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="", margin=dict(l=10, r=10, t=15, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         aplicar_eixo_moeda(fig)
-        st.plotly_chart(fig, use_container_width=True)
-    with aba3:
-        for indice, passo in enumerate(plano, start=1):
-            panel_html(f"Passo {indice}", passo)
+        st.plotly_chart(fig, width="stretch")
+
+    panel_html("Insight do mês", str(resumo_final["recomendacao"]))
 
 
 def aba_metas(saldo: float) -> dict[str, object]:
@@ -1127,13 +1128,11 @@ def aba_metas(saldo: float) -> dict[str, object]:
 
     mensal = valor_total / prazo if prazo else 0.0
     cabe = saldo >= mensal and mensal > 0
-    c4, c5, c6 = st.columns(3)
+    c4, c5 = st.columns(2)
     with c4:
-        card("Guardar por mês", formatar_moeda(mensal), "Valor necessário para chegar no prazo", "green")
+        card("🎯 Guardar por mês", formatar_moeda(mensal), "Valor necessário para chegar no prazo.", "green")
     with c5:
-        card("Sobrou no mês", formatar_moeda(max(saldo, 0)), "Valor disponível no painel", "blue" if saldo > 0 else "gold")
-    with c6:
-        card("Cabe agora?", "Sim" if cabe else "Ainda não", "Ajuste prazo ou valor se precisar", "blue" if cabe else "gold")
+        card("💰 Sobra do mês", formatar_moeda(max(saldo, 0)), "Valor disponível no resultado.", "blue" if saldo > 0 else "gold")
 
     if valor_total > 0 and not cabe:
         st.warning("A meta pode ficar mais leve aumentando o prazo ou criando uma folga maior no mês.")
@@ -1146,166 +1145,209 @@ def aba_metas(saldo: float) -> dict[str, object]:
         fig.update_traces(line_color="#2f6f9f")
         fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         aplicar_eixo_moeda(fig)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     return {"objetivo": objetivo, "valor_total": valor_total, "prazo_meses": int(prazo), "valor_mensal_necessario": mensal, "situacao": "Sim" if cabe else "Não"}
 
 
-def selecionar_taxa_tesouro(titulos: list[dict[str, object]], tipo: str, padrao: float) -> tuple[str, float]:
-    opcoes = [t for t in titulos if t["tipo"] == tipo]
-    if not opcoes:
-        taxa = st.number_input(f"Taxa anual para {tipo}", value=float(padrao), step=0.1, format="%.2f", key=f"manual_{tipo}")
-        return "Taxa manual", taxa
-    nomes = [f"{t['nome']} - taxa {formatar_decimal(t['taxa'])}% - venc. {t['vencimento']}" for t in opcoes]
-    escolha = st.selectbox(tipo, nomes, key=f"select_{tipo}")
-    indice = nomes.index(escolha)
-    return opcoes[indice]["nome"], float(opcoes[indice]["taxa"])
-
-
-def aba_simulacoes(meta: dict[str, object]) -> dict[str, object]:
-    st.subheader("Simulações educativas")
-    st.warning("A simulação abaixo possui caráter exclusivamente educativo e não representa recomendação de investimento.")
+def aba_guardando_dinheiro(meta: dict[str, object]) -> dict[str, object]:
+    st.subheader("Guardando dinheiro")
+    st.markdown('<p class="note">Compare caminhos simples para visualizar a diferença de guardar todo mês.</p>', unsafe_allow_html=True)
+    st.info("As comparações possuem caráter informativo.")
 
     taxas = obter_taxas_bcb()
-    tesouro = obter_titulos_tesouro()
-    if taxas["ok"]:
-        st.success(f"Selic carregada do Banco Central: {formatar_decimal(taxas['selic_aa'])}% ao ano. Data: {taxas['selic_data']}.")
-    else:
-        st.warning("Não foi possível carregar as taxas do BCB. Use valores manuais para simular.")
-    if tesouro["ok"]:
-        st.caption(f"Taxas do Tesouro carregadas do Tesouro Transparente. Data base: {tesouro['data_base']}.")
-    else:
-        st.caption("Não foi possível carregar o Tesouro Transparente. Use taxas manuais para simular.")
+    if not taxas["ok"]:
+        st.caption("Usando uma referência padrão porque não foi possível atualizar os valores agora.")
 
-    with st.expander("Taxas usadas na simulação", expanded=False):
-        selic_aa = st.number_input("Selic ao ano", min_value=0.0, value=float(taxas["selic_aa"]), step=0.25, format="%.2f", key="sim_selic")
-        tr_mensal = st.number_input("TR ao mês", min_value=0.0, value=float(taxas["tr_mensal"]), step=0.01, format="%.4f", key="sim_tr")
-        ipca_12m = st.number_input("IPCA dos últimos 12 meses", min_value=0.0, value=float(taxas["ipca_12m"]), step=0.1, format="%.2f", key="sim_ipca")
-        taxa_extra = st.number_input("Taxa anual extra opcional", min_value=0.0, value=0.0, step=0.05, format="%.2f", key="sim_taxa_extra", help="Use para testar custódia, serviço ou outro desconto anual. Pode deixar zero.")
+    referencia_aa = float(taxas["selic_aa"])
+    tr_mensal = float(taxas["tr_mensal"])
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         valor_inicial = dinheiro_input("Dinheiro já guardado", "sim_valor_inicial")
     with c2:
         valor_mensal = st.number_input("Guardar por mês", min_value=0.0, value=float(st.session_state.get("sim_valor_mensal", meta.get("valor_mensal_necessario", 0.0))), step=50.0, format="%.2f", key="sim_valor_mensal")
     with c3:
         meses = st.number_input("Por quantos meses", min_value=1, max_value=360, value=int(st.session_state.get("sim_meses", max(int(meta.get("prazo_meses", 12)), 1))), step=1, key="sim_meses")
-    with c4:
-        percentual_cdi = st.number_input("Percentual do CDI", min_value=0.0, max_value=200.0, value=100.0, step=5.0, format="%.2f", key="sim_percentual_cdi", help="100 significa 100% do CDI. O app não indica produto.")
-
-    st.markdown("#### Títulos públicos para comparação")
-    c5, c6, c7 = st.columns(3)
-    with c5:
-        _, taxa_selic_tesouro = selecionar_taxa_tesouro(tesouro["titulos"], "Tesouro Selic", 0.10)
-    with c6:
-        _, taxa_pre = selecionar_taxa_tesouro(tesouro["titulos"], "Tesouro Prefixado", 10.0)
-    with c7:
-        _, taxa_ipca = selecionar_taxa_tesouro(tesouro["titulos"], "Tesouro IPCA+", 5.0)
 
     simulacao = simular_cenarios(
         valor_inicial=float(valor_inicial),
         valor_mensal=float(valor_mensal),
         meses=int(meses),
-        selic_aa=float(selic_aa),
+        selic_aa=float(referencia_aa),
         tr_mensal=float(tr_mensal),
-        ipca_12m=float(ipca_12m),
-        percentual_cdi=float(percentual_cdi),
-        taxa_selic_tesouro=float(taxa_selic_tesouro),
-        taxa_pre=float(taxa_pre),
-        taxa_ipca=float(taxa_ipca),
-        taxa_extra_aa=float(taxa_extra),
     )
 
     final = simulacao["final"]
-    st.markdown("#### Resultado final estimado")
-    cols = st.columns(3)
+    st.markdown("#### Resultado aproximado")
+    cols = st.columns(2)
     with cols[0]:
-        card("Conta corrente", formatar_moeda(final["Conta corrente sem rendimento"]), "Mesmo dinheiro sem rendimento", "green")
+        card("💵 Dinheiro parado", formatar_moeda(final["Dinheiro parado"]), "Mesmo dinheiro sem render.", "green")
     with cols[1]:
-        card("CDI depois do desconto", formatar_moeda(final["CDI depois do desconto"]), simulacao["faixa_irrf"], "blue")
-    with cols[2]:
-        card("Poupança", formatar_moeda(final["Poupança"]), "Sem IR nesta simulação", "green")
-    cols2 = st.columns(3)
-    with cols2[0]:
-        card("Tesouro Selic", formatar_moeda(final["Tesouro Selic depois do desconto"]), "Com IRRF estimado", "blue")
-    with cols2[1]:
-        card("Tesouro Prefixado", formatar_moeda(final["Tesouro Prefixado depois do desconto"]), "Com IRRF estimado", "gold")
-    with cols2[2]:
-        card("Tesouro IPCA+", formatar_moeda(final["Tesouro IPCA+ depois do desconto"]), "Com IPCA informado e IRRF", "red")
+        card("🏦 Poupança", formatar_moeda(final["Poupança"]), "Comparação simples e conhecida.", "blue")
+    col3, _ = st.columns(2)
+    with col3:
+        card("📈 Aplicação simples", formatar_moeda(final["Aplicação simples"]), "Estimativa para comparar com dinheiro parado.", "gold")
 
     tabela = simulacao["tabela"]
-    aba1, aba2, aba3 = st.tabs(["Gráfico", "Tabela mês a mês", "Como entender"])
-    with aba1:
-        dados = tabela.melt(id_vars="Mês", var_name="Cenário", value_name="Valor")
-        dados = dados[dados["Cenário"] != "Total colocado"]
-        fig = px.line(dados, x="Mês", y="Valor", color="Cenário", markers=True)
-        fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", legend_title_text="")
-        aplicar_eixo_moeda(fig)
-        st.plotly_chart(fig, use_container_width=True)
-    with aba2:
-        st.dataframe(formatar_tabela_simulacao(tabela), hide_index=True, use_container_width=True)
-    with aba3:
-        panel_html("CDI", "Usa a Selic atual como aproximação educativa. O desconto de IRRF é estimado sobre o rendimento.")
-        panel_html("Poupança", f"Usa a regra: {simulacao['regra_poupanca']}. Nesta simulação aparece sem desconto de IR.")
-        panel_html("Tesouro Selic, Prefixado e IPCA+", "Usam taxas atuais do Tesouro Transparente quando disponíveis. A conta é simplificada e considera IRRF estimado.")
-        panel_html("Atenção", "Preços do Tesouro mudam todos os dias. Venda antes do vencimento pode dar resultado diferente. Isto não é indicação de investimento.")
+    diferenca = float(final["Aplicação simples"]) - float(final["Dinheiro parado"])
+    if diferenca > 0:
+        st.success(f"A diferença estimada entre deixar parado e aplicar de forma simples é de {formatar_moeda(diferenca)} no período.")
+
+    dados = pd.DataFrame(
+        {
+            "Cenário": ["Dinheiro parado", "Poupança", "Aplicação simples"],
+            "Valor": [final["Dinheiro parado"], final["Poupança"], final["Aplicação simples"]],
+        }
+    )
+    dados["Texto"] = dados["Valor"].map(formatar_moeda)
+    fig = px.bar(dados, x="Valor", y="Cenário", text="Texto", orientation="h", color="Cenário", color_discrete_sequence=["#2f7d59", "#2f6f9f", "#b7791f"])
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="", margin=dict(l=10, r=10, t=15, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
+    fig.update_yaxes(showgrid=False)
+    st.plotly_chart(fig, width="stretch")
+
+    with st.expander("Ver evolução mês a mês"):
+        st.dataframe(formatar_tabela_simulacao(tabela), hide_index=True, width="stretch")
 
     return simulacao
 
 
-def montar_relatorio(resumo: dict[str, float], meta: dict[str, object], simulacao: dict[str, object], diagnostico: list[dict[str, str]], plano: list[str]) -> str:
+def montar_resumo_exportacao(resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> list[str]:
     linhas = [
         DISPLAY_NAME,
         f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
         "",
-        "RESUMO DO MÊS",
+        "Resumo mensal",
         f"Entrou: {formatar_moeda(resumo['total_receitas'])}",
         f"Saiu: {formatar_moeda(resumo['total_geral_gastos'])}",
         f"Resultado: {formatar_moeda(resumo['saldo_final'])}",
-        f"Gastos fixos: {formatar_moeda(resumo['total_fixos'])}",
-        f"Gastos não fixos: {formatar_moeda(resumo['total_variaveis'])}",
-        f"Parcelas cadastradas: {formatar_moeda(resumo['total_dividas'])}",
+        f"Parcelas: {formatar_moeda(resumo['total_dividas'])}",
+        f"Categoria principal: {resumo_final['categoria']} ({formatar_moeda(float(resumo_final['valor_categoria']))})",
+        f"Insight: {resumo_final['recomendacao']}",
         "",
-        "LEITURA RÁPIDA",
+        "Sugestões rápidas",
     ]
-    linhas.extend([f"- {item['titulo']}: {item['texto']} Próximo passo: {item['acao']}" for item in diagnostico])
-    linhas.extend(["", "PLANO DE AÇÃO"])
-    linhas.extend([f"- {passo}" for passo in plano])
+    linhas.extend([f"- {sugestao}" for sugestao in sugestoes[:5]])
     linhas.extend(
         [
             "",
-            "META",
+            "Meta",
             f"Objetivo: {meta['objetivo'] or 'Não informado'}",
             f"Valor desejado: {formatar_moeda(float(meta['valor_total']))}",
             f"Guardar por mês: {formatar_moeda(float(meta['valor_mensal_necessario']))}",
             f"Cabe agora? {meta['situacao']}",
             "",
-            "SIMULAÇÃO EDUCATIVA",
-            "A simulação possui caráter exclusivamente educativo e não representa recomendação de investimento.",
-            f"Selic usada: {formatar_decimal(float(simulacao['selic_aa']))}% ao ano",
-            f"IPCA usado: {formatar_decimal(float(simulacao['ipca_12m']))}% em 12 meses",
-            f"Faixa de IRRF: {simulacao['faixa_irrf']}",
-            f"Total colocado: {formatar_moeda(float(simulacao['final']['Total colocado']))}",
+            "Guardando dinheiro",
+            f"Total guardado: {formatar_moeda(float(simulacao['final']['Total guardado']))}",
         ]
     )
     for chave, valor in simulacao["final"].items():
-        if chave not in ["Mês", "Total colocado"]:
+        if chave not in ["Mês", "Total guardado"]:
             linhas.append(f"{chave}: {formatar_moeda(float(valor))}")
-    linhas.extend(["", "Aviso: este material não recomenda investimentos, bancos, corretoras ou produtos financeiros."])
-    return "\n".join(linhas)
+    linhas.extend(["", "As comparações possuem caráter informativo."])
+    return linhas
 
 
-def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], meta: dict[str, object], simulacao: dict[str, object], diagnostico: list[dict[str, str]], plano: list[str]) -> bytes:
+def quebrar_texto(texto: str, limite: int = 92) -> list[str]:
+    if not texto:
+        return [""]
+    palavras = texto.split()
+    linhas: list[str] = []
+    atual = ""
+    for palavra in palavras:
+        tentativa = palavra if not atual else f"{atual} {palavra}"
+        if len(tentativa) <= limite:
+            atual = tentativa
+        else:
+            if atual:
+                linhas.append(atual)
+            atual = palavra
+    if atual:
+        linhas.append(atual)
+    return linhas
+
+
+def escapar_pdf(texto: str) -> str:
+    texto = texto.encode("latin-1", "replace").decode("latin-1")
+    return texto.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def exportar_pdf(linhas: list[str]) -> bytes:
+    linhas_pdf: list[str] = []
+    for linha in linhas:
+        linhas_pdf.extend(quebrar_texto(linha))
+
+    paginas: list[list[str]] = []
+    linhas_por_pagina = 48
+    for indice in range(0, len(linhas_pdf), linhas_por_pagina):
+        paginas.append(linhas_pdf[indice : indice + linhas_por_pagina])
+    if not paginas:
+        paginas = [[""]]
+
+    objetos: dict[int, bytes] = {
+        1: b"<< /Type /Catalog /Pages 2 0 R >>",
+        3: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    }
+    ids_paginas = []
+    for indice, pagina in enumerate(paginas):
+        conteudo_id = 4 + indice * 2
+        pagina_id = conteudo_id + 1
+        ids_paginas.append(pagina_id)
+
+        comandos = ["BT", "/F1 11 Tf", "50 790 Td", "14 TL"]
+        for linha_indice, linha in enumerate(pagina):
+            prefixo = "" if linha_indice == 0 else "T* "
+            comandos.append(f"{prefixo}({escapar_pdf(linha)}) Tj")
+        comandos.append("ET")
+        conteudo = "\n".join(comandos).encode("latin-1", "replace")
+        objetos[conteudo_id] = b"<< /Length " + str(len(conteudo)).encode("ascii") + b" >>\nstream\n" + conteudo + b"\nendstream"
+        objetos[pagina_id] = (
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {conteudo_id} 0 R >>"
+        ).encode("ascii")
+
+    kids = " ".join(f"{pagina_id} 0 R" for pagina_id in ids_paginas)
+    objetos[2] = f"<< /Type /Pages /Kids [{kids}] /Count {len(ids_paginas)} >>".encode("ascii")
+
+    maior_id = max(objetos)
+    saida = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0] * (maior_id + 1)
+    for objeto_id in range(1, maior_id + 1):
+        offsets[objeto_id] = len(saida)
+        saida.extend(f"{objeto_id} 0 obj\n".encode("ascii"))
+        saida.extend(objetos[objeto_id])
+        saida.extend(b"\nendobj\n")
+
+    xref_pos = len(saida)
+    saida.extend(f"xref\n0 {maior_id + 1}\n".encode("ascii"))
+    saida.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        saida.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    saida.extend(f"trailer\n<< /Size {maior_id + 1} /Root 1 0 R >>\nstartxref\n{xref_pos}\n%%EOF\n".encode("ascii"))
+    return bytes(saida)
+
+
+def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> bytes:
     arquivo = BytesIO()
     with pd.ExcelWriter(arquivo, engine="openpyxl") as writer:
-        pd.DataFrame({"Gerado em": [datetime.now().strftime("%d/%m/%Y %H:%M")], "Material": [DISPLAY_NAME]}).to_excel(writer, index=False, sheet_name="Inicio")
+        pd.DataFrame({"Gerado em": [datetime.now().strftime("%d/%m/%Y %H:%M")], "App": [DISPLAY_NAME]}).to_excel(writer, index=False, sheet_name="Inicio")
         lancamentos.to_excel(writer, index=False, sheet_name="Lancamentos")
         dividas.to_excel(writer, index=False, sheet_name="Dividas")
-        pd.DataFrame(list(resumo.items()), columns=["Item", "Valor"]).to_excel(writer, index=False, sheet_name="Resumo")
+        pd.DataFrame(
+            [
+                {"Item": "Entrou", "Valor": resumo["total_receitas"]},
+                {"Item": "Saiu", "Valor": resumo["total_geral_gastos"]},
+                {"Item": "Resultado", "Valor": resumo["saldo_final"]},
+                {"Item": "Parcelas", "Valor": resumo["total_dividas"]},
+                {"Item": "Categoria principal", "Valor": resumo_final["categoria"]},
+                {"Item": "Insight", "Valor": resumo_final["recomendacao"]},
+            ]
+        ).to_excel(writer, index=False, sheet_name="Resumo")
         pd.DataFrame([meta]).to_excel(writer, index=False, sheet_name="Meta")
-        pd.DataFrame(diagnostico).to_excel(writer, index=False, sheet_name="Leitura")
-        pd.DataFrame({"Passo": plano}).to_excel(writer, index=False, sheet_name="Plano")
-        simulacao["tabela"].to_excel(writer, index=False, sheet_name="Simulacao")
+        pd.DataFrame({"Sugestão": sugestoes}).to_excel(writer, index=False, sheet_name="Sugestoes")
+        simulacao["tabela"].to_excel(writer, index=False, sheet_name="Guardando")
         for planilha in writer.sheets.values():
             for coluna in planilha.columns:
                 maior = max(len(str(celula.value)) if celula.value is not None else 0 for celula in coluna)
@@ -1328,7 +1370,7 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
                 for celula in planilha_dividas[cabecalhos_dividas[nome_coluna]][1:]:
                     celula.number_format = '"R$" #,##0.00'
 
-        planilha_simulacao = writer.sheets["Simulacao"]
+        planilha_simulacao = writer.sheets["Guardando"]
         cabecalhos_simulacao = {celula.value: celula.column_letter for celula in planilha_simulacao[1]}
         for nome_coluna, letra in cabecalhos_simulacao.items():
             if nome_coluna != "Mês":
@@ -1337,171 +1379,145 @@ def exportar_excel(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dic
     return arquivo.getvalue()
 
 
-def aba_relatorios(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], meta: dict[str, object], simulacao: dict[str, object], diagnostico: list[dict[str, str]], plano: list[str]) -> None:
-    st.subheader("Relatórios")
-    relatorio = montar_relatorio(resumo, meta, simulacao, diagnostico, plano)
+def aba_historico(lancamentos: pd.DataFrame, dividas: pd.DataFrame, resumo: dict[str, float], resumo_final: dict[str, object], meta: dict[str, object], simulacao: dict[str, object], sugestoes: list[str]) -> None:
+    st.subheader("Histórico")
+    linhas_pdf = montar_resumo_exportacao(resumo, resumo_final, meta, simulacao, sugestoes)
     data_arquivo = datetime.now().strftime("%Y-%m-%d_%H-%M")
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button("Baixar Excel", data=exportar_excel(lancamentos, dividas, resumo, meta, simulacao, diagnostico, plano), file_name=f"organizacao_financeira_{data_arquivo}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-    with c2:
-        st.download_button("Baixar TXT", data=relatorio.encode("utf-8"), file_name=f"relatorio_financeiro_{data_arquivo}.txt", mime="text/plain", use_container_width=True)
-
-    st.info("Para salvar em PDF, use a prévia abaixo e escolha imprimir/salvar como PDF no navegador.")
-    aba1, aba2, aba3, aba4 = st.tabs(["Prévia", "Lançamentos", "Dívidas", "Ano"])
-    with aba1:
-        st.text_area("Relatório", relatorio, height=520)
-    with aba2:
-        st.dataframe(formatar_tabela_lancamentos(lancamentos), hide_index=True, use_container_width=True)
-    with aba3:
-        st.dataframe(formatar_tabela_dividas(dividas), hide_index=True, use_container_width=True)
-    with aba4:
-        st.markdown("#### Controle anual de gastos")
-        st.markdown(
-            '<p class="note">Escolha um ou mais anos para acompanhar entradas, gastos fixos, gastos não fixos e compras parceladas. Lançamentos marcados como Fixo são repetidos mês a mês entre Início e Fim.</p>',
-            unsafe_allow_html=True,
-        )
-
-        opcoes_anos = anos_disponiveis(lancamentos)
-        padrao = [ano for ano in [2026, 2027] if ano in opcoes_anos] or opcoes_anos[:1]
-        anos = st.multiselect("Anos do relatório", options=opcoes_anos, default=padrao)
-        if not anos:
-            st.info("Selecione pelo menos um ano.")
-            return
-
-        relatorio_anual = gerar_relatorio_anual(lancamentos, anos)
-        totais_ano = relatorio_anual["totais_ano"]
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            card("Anos selecionados", ", ".join(str(ano) for ano in anos), "Período do relatório", "blue")
-        with c2:
-            card("Gastos no período", formatar_moeda(float(totais_ano["Total de gastos"].sum())), "Soma dos gastos lançados", "red")
-        with c3:
-            card("Saldo no período", formatar_moeda(float(totais_ano["Sobrou/Faltou"].sum())), "Entradas menos gastos", "green")
-
         st.download_button(
-            "Baixar controle anual em Excel",
-            data=exportar_relatorio_anual_excel(relatorio_anual),
-            file_name=f"controle_gastos_anual_{data_arquivo}.xlsx",
+            "Baixar Excel",
+            data=exportar_excel(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes),
+            file_name=f"organizacao_financeira_{data_arquivo}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
+            width="stretch",
+        )
+    with c2:
+        st.download_button(
+            "Baixar PDF",
+            data=exportar_pdf(linhas_pdf),
+            file_name=f"resumo_financeiro_{data_arquivo}.pdf",
+            mime="application/pdf",
+            width="stretch",
         )
 
-        sub1, sub2, sub3, sub4, sub5 = st.tabs(["Mês a mês", "Totais por ano", "Categorias", "Parceladas", "Usados no relatório"])
-        with sub1:
-            tabela_mensal = relatorio_anual["mensal"].drop(columns=["Mês nº"])
-            st.dataframe(formatar_tabela_resumo_anual(tabela_mensal), hide_index=True, use_container_width=True)
+    st.markdown("#### Resumo mensal")
+    c3, c4 = st.columns(2)
+    with c3:
+        card("💰 Entrou", formatar_moeda(resumo["total_receitas"]), "Entradas do mês.", "green")
+    with c4:
+        card("📉 Saiu", formatar_moeda(resumo["total_geral_gastos"]), "Gastos e parcelas.", "red")
+    c5, c6 = st.columns(2)
+    with c5:
+        card("Resultado", formatar_moeda(resumo["saldo_final"]), "Entrou menos saiu.", "blue" if resumo["saldo_final"] >= 0 else "gold")
+    with c6:
+        card("Categoria principal", str(resumo_final["categoria"]), formatar_moeda(float(resumo_final["valor_categoria"])), "gold")
 
-            dados_grafico = relatorio_anual["mensal"].copy()
-            dados_grafico["Período"] = dados_grafico["Mês"].astype(str) + "/" + dados_grafico["Ano"].astype(str)
-            dados_grafico = dados_grafico.melt(
-                id_vars=["Ano", "Mês nº", "Período"],
-                value_vars=["Gastos fixos", "Gastos não fixos"],
-                var_name="Tipo de gasto",
-                value_name="Valor",
-            )
+    with st.expander("Ver lançamentos"):
+        st.dataframe(formatar_tabela_lancamentos(lancamentos, ["Data", "Descrição", "Categoria", "Valor"]), hide_index=True, width="stretch")
+
+    with st.expander("Ver dívidas"):
+        st.dataframe(formatar_tabela_dividas(dividas), hide_index=True, width="stretch")
+
+    st.markdown("#### Evolução anual")
+    opcoes_anos = anos_disponiveis(lancamentos)
+    padrao = [ano for ano in [date.today().year] if ano in opcoes_anos] or opcoes_anos[:1]
+    anos = st.multiselect("Anos", options=opcoes_anos, default=padrao)
+    if not anos:
+        st.info("Selecione pelo menos um ano.")
+        return
+
+    historico_anual = gerar_relatorio_anual(lancamentos, anos)
+    totais_ano = historico_anual["totais_ano"]
+
+    c7, c8 = st.columns(2)
+    with c7:
+        card("📉 Gastos no período", formatar_moeda(float(totais_ano["Total de gastos"].sum())), "Soma dos gastos lançados.", "red")
+    with c8:
+        card("💰 Saldo no período", formatar_moeda(float(totais_ano["Sobrou/Faltou"].sum())), "Entradas menos gastos.", "green")
+
+    st.download_button(
+        "Baixar histórico anual em Excel",
+        data=exportar_relatorio_anual_excel(historico_anual),
+        file_name=f"historico_anual_{data_arquivo}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+    )
+
+    dados_grafico = historico_anual["mensal"].copy()
+    dados_grafico["Período"] = dados_grafico["Mês"].astype(str) + "/" + dados_grafico["Ano"].astype(str)
+    fig = px.line(dados_grafico, x="Período", y="Sobrou/Faltou", markers=True)
+    fig.update_traces(line_color="#2f6f9f")
+    fig.update_layout(xaxis_title="", yaxis_title="", margin=dict(l=10, r=10, t=20, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    aplicar_eixo_moeda(fig)
+    st.plotly_chart(fig, width="stretch")
+
+    with st.expander("Resumo mês a mês"):
+        tabela_mensal = historico_anual["mensal"].drop(columns=["Mês nº"])
+        st.dataframe(formatar_tabela_resumo_anual(tabela_mensal), hide_index=True, width="stretch")
+
+    with st.expander("Categorias principais"):
+        categorias = historico_anual["categorias"]
+        st.dataframe(formatar_tabela_categoria_anual(categorias), hide_index=True, width="stretch")
+        if not categorias.empty:
+            categorias_grafico = categorias.groupby("Categoria", as_index=False)["Valor"].sum().sort_values("Valor", ascending=False).head(8)
+            categorias_grafico["Categoria"] = categorias_grafico["Categoria"].map(lambda item: f"{icone_categoria(item)} {item}")
+            categorias_grafico["Texto"] = categorias_grafico["Valor"].map(formatar_moeda)
             fig = px.bar(
-                dados_grafico,
-                x="Período",
-                y="Valor",
-                color="Tipo de gasto",
-                color_discrete_map={"Gastos fixos": "#b7791f", "Gastos não fixos": "#2f6f9f"},
+                categorias_grafico,
+                x="Valor",
+                y="Categoria",
+                text="Texto",
+                orientation="h",
+                color="Categoria",
+                color_discrete_sequence=px.colors.qualitative.Set2,
             )
-            fig.update_layout(xaxis_title="", yaxis_title="Valor", margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-            aplicar_eixo_moeda(fig)
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            fig.update_layout(showlegend=False, xaxis_title="", yaxis_title="", yaxis={"categoryorder": "total ascending"}, margin=dict(l=10, r=10, t=15, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            fig.update_xaxes(showgrid=False, tickprefix="R$ ", separatethousands=True)
+            fig.update_yaxes(showgrid=False)
+            st.plotly_chart(fig, width="stretch")
 
-        with sub2:
-            st.dataframe(formatar_tabela_resumo_anual(totais_ano), hide_index=True, use_container_width=True)
-        with sub3:
-            categorias = relatorio_anual["categorias"]
-            st.dataframe(formatar_tabela_categoria_anual(categorias), hide_index=True, use_container_width=True)
-            if not categorias.empty:
-                categorias_grafico = categorias.copy()
-                categorias_grafico["Ano"] = categorias_grafico["Ano"].astype(str)
-                fig = px.bar(
-                    categorias_grafico,
-                    x="Categoria",
-                    y="Valor",
-                    color="Ano",
-                    barmode="group",
-                    color_discrete_sequence=["#2f6f9f", "#2f7d59", "#b7791f", "#c45f4b"],
-                )
-                fig.update_layout(xaxis_title="", yaxis_title="Valor", margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-                aplicar_eixo_moeda(fig)
-                st.plotly_chart(fig, use_container_width=True)
-        with sub4:
-            parceladas = relatorio_anual["parceladas"]
-            if parceladas.empty:
-                st.info("Nenhuma compra parcelada encontrada nos anos selecionados.")
-            else:
-                tabela_parceladas = parceladas.copy()
-                tabela_parceladas["Valor"] = tabela_parceladas["Valor"].map(formatar_moeda)
-                st.dataframe(tabela_parceladas, hide_index=True, use_container_width=True)
-        with sub5:
-            considerados = relatorio_anual["considerados"].copy()
-            if considerados.empty:
-                st.info("Nenhum lançamento encontrado no período selecionado.")
-            else:
-                for coluna_data in ["Data", "Início", "Fim"]:
-                    if coluna_data in considerados.columns:
-                        considerados[coluna_data] = considerados[coluna_data].map(formatar_data)
-                if "Valor" in considerados.columns:
-                    considerados["Valor"] = considerados["Valor"].map(formatar_moeda)
-                colunas_visiveis = [
-                    coluna
-                    for coluna in [
-                        "Ano",
-                        "Mês",
-                        "Data",
-                        "Tipo",
-                        "Descrição",
-                        "Categoria",
-                        "Valor",
-                        "Fixo",
-                        "Início",
-                        "Fim",
-                        "Origem no relatório",
-                    ]
-                    if coluna in considerados.columns
-                ]
-                st.dataframe(considerados[colunas_visiveis], hide_index=True, use_container_width=True)
-
-
-def aba_oficina() -> None:
-    st.subheader("Oficina")
-    panel_html("Objetivo", "Ajudar participantes a entender o mês financeiro com linguagem simples: entrou, saiu, sobrou ou faltou.")
-    panel_html("Como conduzir", "Comece com um exemplo fictício, depois peça que cada pessoa preencha seus próprios lançamentos sem expor dados pessoais.")
-    panel_html("Perguntas para conversa", "Qual gasto mais surpreendeu? Quais gastos são fixos? Qual gasto não fixo poderia ser reduzido? Existe parcela pesando no mês?")
-    panel_html("Cuidados", "Não peça CPF, banco, número de conta, senha, contrato ou dados de cartão. O foco é educação e organização.")
-    panel_html("Justificativa acadêmica", "O app responde à dificuldade de controle de gastos, à falta de organização financeira estruturada e à necessidade de uma ferramenta prática para planejar melhor o dinheiro do mês.")
+    with st.expander("Compras parceladas"):
+        parceladas = historico_anual["parceladas"]
+        if parceladas.empty:
+            st.info("Nenhuma compra parcelada encontrada nos anos selecionados.")
+        else:
+            tabela_parceladas = parceladas.copy()
+            tabela_parceladas["Valor"] = tabela_parceladas["Valor"].map(formatar_moeda)
+            st.dataframe(tabela_parceladas, hide_index=True, width="stretch")
 
 
 def barra_lateral() -> None:
     st.sidebar.title("Organização")
-    st.sidebar.write("Registre entradas e gastos.")
-    st.sidebar.write("Marque o que é fixo.")
-    st.sidebar.write("Acompanhe o painel do mês.")
+    st.sidebar.caption("Controle simples do mês.")
     st.sidebar.divider()
-    if st.sidebar.button("Carregar exemplo", use_container_width=True):
+    if st.sidebar.button("Novo lançamento", width="stretch"):
+        if "lancamentos_df" not in st.session_state:
+            st.session_state["lancamentos_df"] = criar_lancamentos_padrao()
+        st.session_state["lancamentos_df"] = pd.concat(
+            [st.session_state["lancamentos_df"], pd.DataFrame([criar_lancamento_vazio()])],
+            ignore_index=True,
+        )
+        st.rerun()
+    if st.sidebar.button("Carregar exemplo", width="stretch"):
         carregar_exemplo()
         st.rerun()
-    if st.sidebar.button("Limpar tudo", use_container_width=True):
+    if st.sidebar.button("Limpar tudo", width="stretch"):
         st.session_state.clear()
         st.rerun()
-    if st.sidebar.button("Atualizar taxas", use_container_width=True):
+    if st.sidebar.button("Atualizar referências", width="stretch"):
         st.cache_data.clear()
         st.rerun()
     st.sidebar.divider()
-    st.sidebar.caption("Material educativo. Não recomenda produtos financeiros.")
+    st.sidebar.caption("As comparações possuem caráter informativo.")
 
 
 def main() -> None:
     configurar_pagina()
     barra_lateral()
 
-    abas = st.tabs(["Início", "Lançamentos", "Dívidas", "Painel", "Metas", "Simulações", "Relatórios", "Oficina"])
+    abas = st.tabs(["Início", "Registrar", "Resultado do mês", "Dívidas", "Metas", "Guardando dinheiro", "Histórico"])
 
     with abas[0]:
         tela_inicio()
@@ -1509,7 +1525,7 @@ def main() -> None:
     with abas[1]:
         lancamentos = aba_lancamentos()
 
-    with abas[2]:
+    with abas[3]:
         dividas, total_dividas = aba_dividas()
 
     totais_gastos = calcular_gastos(lancamentos)
@@ -1520,24 +1536,22 @@ def main() -> None:
         total_dividas=total_dividas,
     )
     diagnostico = gerar_diagnostico(resumo)
-    plano = gerar_plano_acao(resumo, lancamentos)
+    sugestoes = gerar_sugestoes_rapidas(resumo, lancamentos)
+    resumo_final = gerar_resumo_financeiro_mes(resumo, lancamentos)
 
-    with abas[3]:
-        exibir_painel(resumo, lancamentos, diagnostico, plano)
+    with abas[2]:
+        exibir_painel(resumo, lancamentos, diagnostico, sugestoes, resumo_final)
 
     with abas[4]:
         meta = aba_metas(resumo["saldo_final"])
 
     with abas[5]:
-        simulacao = aba_simulacoes(meta)
+        simulacao = aba_guardando_dinheiro(meta)
 
     with abas[6]:
-        aba_relatorios(lancamentos, dividas, resumo, meta, simulacao, diagnostico, plano)
+        aba_historico(lancamentos, dividas, resumo, resumo_final, meta, simulacao, sugestoes)
 
-    with abas[7]:
-        aba_oficina()
-
-    st.caption("Uso educativo. O app ajuda a organizar o mês, mas não recomenda investimentos nem produtos financeiros.")
+    st.caption("As comparações possuem caráter informativo.")
 
 
 if __name__ == "__main__":
